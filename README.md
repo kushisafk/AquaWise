@@ -1,9 +1,9 @@
 # AquaWise: Weather-Aware Irrigation Decision Support
 
-[![React](https://img.shields.io/badge/Frontend-React%2019%20%7C%20Vite%20%7C%20Tailwind-blue.svg)](artifacts/aquawise)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI%20%7C%20Python%203.11+-009688.svg)](artifacts/api-server)
+[![React](https://img.shields.io/badge/Frontend-React%2019%20%7C%20Vite%20%7C%20Tailwind-blue.svg)](frontend)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI%20%7C%20Python%203.11+-009688.svg)](backend)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6.svg)](tsconfig.json)
-[![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-success.svg)](artifacts/aquawise/public)
+[![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-success.svg)](frontend/public)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Event](https://img.shields.io/badge/Hackathon-IARE%20HackVerse%202026--27-orange.svg)](docs/PRD.md)
 
