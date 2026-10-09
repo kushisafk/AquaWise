@@ -1,7 +1,7 @@
 [project]
-name = "repl-nix-workspace"
-version = "0.1.0"
-description = "Add your description here"
+name = "aquawise-backend"
+version = "1.0.0"
+description = "AquaWise: Weather-Aware Irrigation Decision Support Backend & ML Engine"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.143.0",
