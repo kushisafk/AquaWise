@@ -485,6 +485,16 @@ def _field_state(db: sqlite3.Connection) -> dict:
     simulation = get_value(db, "simulation", DEFAULT_SIMULATION.copy())
     weather = get_weather(db, settings)
     current = now_utc()
+    time_of_day = current.hour + current.minute / 60.0
+    last_session = db.execute(
+        "SELECT stopped_at, ends_at FROM irrigation_sessions WHERE active = 0 ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    time_since_last_irrigation = 24.0
+    if last_session:
+        end_time = parse_time(last_session["stopped_at"]) or parse_time(last_session["ends_at"])
+        if end_time:
+            time_since_last_irrigation = min(168.0, max(0.0, (current - end_time).total_seconds() / 3600.0))
+            
     last_updated = parse_time(simulation.get("lastUpdated"))
     elapsed_minutes = min(
         120.0,
@@ -555,6 +565,8 @@ def _field_state(db: sqlite3.Connection) -> dict:
         sunlight_percent=sunlight,
         max_duration_minutes=settings["maxDurationMinutes"],
         forecast_moisture_6h=future_moisture,
+        time_of_day=time_of_day,
+        time_since_last_irrigation=time_since_last_irrigation,
         language=settings["language"],
     )
     recommendation["updatedAt"] = iso(current)
@@ -714,6 +726,16 @@ def get_analytics():
         moisture = field["telemetry"]["soilMoisture"]
         if moisture is None:
             moisture = float(get_value(db, "simulation", DEFAULT_SIMULATION)["moisture"])
+            
+        current = now_utc()
+        time_of_day = current.hour + current.minute / 60.0
+        last_session = db.execute("SELECT stopped_at, ends_at FROM irrigation_sessions WHERE active = 0 ORDER BY id DESC LIMIT 1").fetchone()
+        time_since_last_irrigation = 24.0
+        if last_session:
+            end_time = parse_time(last_session["stopped_at"]) or parse_time(last_session["ends_at"])
+            if end_time:
+                time_since_last_irrigation = min(168.0, max(0.0, (current - end_time).total_seconds() / 3600.0))
+
         points, label = forecast_points(
             float(moisture), field["telemetry"]["temperatureC"],
             field["telemetry"]["humidityPercent"],
@@ -721,6 +743,8 @@ def get_analytics():
             field["weather"]["rainProbability6h"],
             field["weather"]["precipitationMm6h"],
             field["irrigation"]["durationMinutes"] if field["irrigation"]["active"] else 0,
+            time_of_day=time_of_day,
+            time_since_last_irrigation=time_since_last_irrigation,
         )
         settings = read_settings(db)
         strategies = strategy_comparison(

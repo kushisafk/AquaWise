@@ -62,6 +62,18 @@ def train_experimental_model() -> dict[str, Any]:
             rain_probability = rng.uniform(0, 100)
             rain_mm = rng.uniform(0, 22) if rain_probability > 25 else 0
             irrigation = rng.choice([0, 0, 0, 8, 15])
+            time_of_day = rng.uniform(0.0, 24.0)
+            time_since_last_irrigation = rng.uniform(0.0, 168.0)
+            
+            # Step 1: Feature Engineering - Time-Series Lags
+            actual_drying = _drying_rate(temperature, humidity, sunlight)
+            moisture_minus_1h = min(100.0, moisture + actual_drying + rng.gauss(0, 0.5))
+            temp_rolling_3h_avg = temperature + rng.gauss(0, 2.0)
+            drying_rate_per_hour = moisture_minus_1h - moisture
+            
+            # Step 5: Evapotranspiration (ET0) Engineered Feature
+            et_index = (temperature * (max(5, sunlight) / 100)) / max(1, humidity)
+
             target = _balance(
                 moisture, horizon, temperature, humidity, sunlight,
                 rain_mm * min(1, horizon / 6), irrigation,
@@ -70,18 +82,39 @@ def train_experimental_model() -> dict[str, Any]:
             samples.append([
                 moisture, horizon, temperature, humidity, sunlight,
                 rain_probability, rain_mm, irrigation,
+                moisture_minus_1h, temp_rolling_3h_avg, drying_rate_per_hour, et_index,
+                time_of_day, time_since_last_irrigation
             ])
             targets.append(target)
             persistence.append(moisture)
 
-        x_train, x_test, y_train, y_test, base_test = train_test_split(
-            np.asarray(samples), np.asarray(targets), np.asarray(persistence),
-            test_size=0.25, random_state=17,
+        # Step 3: Time-Series Cross-Validation
+        # Do not shuffle time-series data!
+        from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+        # Keep temporal order by removing shuffle/random split (in a real DB scenario, order is vital)
+        split_idx = int(len(samples) * 0.75)
+        x_train, x_test = np.asarray(samples)[:split_idx], np.asarray(samples)[split_idx:]
+        y_train, y_test = np.asarray(targets)[:split_idx], np.asarray(targets)[split_idx:]
+        base_test = np.asarray(persistence)[split_idx:]
+        
+        # Step 2: Dynamic Hyperparameter Tuning
+        # Step 4: Upgrade to LightGBM-style Regressor (HistGradientBoostingRegressor)
+        # We use sklearn's native HistGradientBoostingRegressor which is heavily optimized for tabular data and handles non-linearities much better than the standard GBR.
+        from sklearn.ensemble import HistGradientBoostingRegressor
+        param_dist = {
+            'max_iter': [30, 50, 100, 150],
+            'max_depth': [2, 3, 4, 5, None],
+            'learning_rate': [0.01, 0.05, 0.1, 0.2]
+        }
+        base_model = HistGradientBoostingRegressor(random_state=17)
+        tscv = TimeSeriesSplit(n_splits=3)
+        search = RandomizedSearchCV(
+            base_model, param_distributions=param_dist, n_iter=8, 
+            scoring='neg_mean_absolute_error', cv=tscv, random_state=17, n_jobs=1
         )
-        candidate = GradientBoostingRegressor(
-            n_estimators=45, max_depth=2, learning_rate=0.08, random_state=17,
-        )
-        candidate.fit(x_train, y_train)
+        search.fit(x_train, y_train)
+        candidate = search.best_estimator_
+
         model_error = float(mean_absolute_error(y_test, candidate.predict(x_test)))
         baseline_error = float(mean_absolute_error(y_test, base_test))
         _model_mae = model_error
@@ -106,9 +139,24 @@ def forecast_points(
     rain_probability: float,
     rain_mm: float,
     irrigation_minutes: float = 0,
+    moisture_minus_1h: float | None = None,
+    temp_rolling_3h_avg: float | None = None,
+    time_of_day: float = 12.0,
+    time_since_last_irrigation: float = 24.0,
 ) -> tuple[list[dict[str, Any]], str]:
     if _model is None and _model_status.startswith("Water-balance simulator"):
         train_experimental_model()
+    
+    # Step 1: Compute real or fallback lag features
+    if moisture_minus_1h is None:
+        moisture_minus_1h = min(100.0, moisture + _drying_rate(temperature, humidity, sunlight))
+    if temp_rolling_3h_avg is None:
+        temp_rolling_3h_avg = temperature
+    drying_rate_per_hour = moisture_minus_1h - moisture
+    
+    # Step 5: Compute ET Index
+    et_index = (temperature * (max(5, sunlight) / 100)) / max(1, humidity)
+
     horizons = [1, 3, 6, 12, 24, 48]
     points = []
     for hours in horizons:
@@ -117,6 +165,8 @@ def forecast_points(
                 predicted = float(_model.predict([[
                     moisture, hours, temperature, humidity, sunlight,
                     rain_probability, rain_mm, irrigation_minutes,
+                    moisture_minus_1h, temp_rolling_3h_avg, drying_rate_per_hour, et_index,
+                    (time_of_day + hours) % 24.0, time_since_last_irrigation + hours
                 ]])[0])
             except Exception:
                 predicted = _balance(

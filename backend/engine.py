@@ -92,6 +92,8 @@ def calculate_recommendation(
     sunlight_percent: float = 55,
     max_duration_minutes: int = 45,
     forecast_moisture_6h: float | None = None,
+    time_of_day: float = 12.0,
+    time_since_last_irrigation: float = 24.0,
     language: str = "en",
 ) -> dict[str, Any]:
     """Apply the specified ordered rules. No randomness or I/O is used."""
