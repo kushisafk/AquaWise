@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>AquaWise</title>
+    <meta name="description" content="Simple, weather-aware irrigation guidance for farmers. AquaWise explains every recommendation using clearly labelled simulated field readings." />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#234d3f" />
+    <meta name="application-name" content="AquaWise" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta property="og:title" content="AquaWise" />
+    <meta property="og:description" content="Weather-aware irrigation guidance with clear reasons and software-only simulated controls." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AquaWise" />
+    <meta name="twitter:description" content="Weather-aware irrigation guidance with clear reasons and software-only simulated controls." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/service-worker.js").catch(() => {
+            window.dispatchEvent(new Event("aquawise:service-worker-unavailable"));
+          });
+        });
+      }
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

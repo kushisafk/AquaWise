@@ -1,22 +1,26 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
+  # Do not change the title: generated import paths depend on it.
   title: Api
   version: 0.1.0
-  description: API specification
+  description: AquaWise simulated-field irrigation decision support API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: field
+  - name: decisions
+  - name: operations
+  - name: analytics
+  - name: preferences
+  - name: history
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +28,454 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /events:
+    get:
+      operationId: streamFieldEvents
+      tags: [field]
+      summary: Subscribe to field updates over Server-Sent Events
+      responses:
+        "200":
+          description: Periodic field state events while the connection is open
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /field:
+    get:
+      operationId: getFieldState
+      tags: [field]
+      summary: Current simulated field state and decision
+      responses:
+        "200":
+          description: Current field state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldState"
+  /weather:
+    get:
+      operationId: getWeather
+      tags: [field]
+      summary: Cached live weather forecast or test override
+      responses:
+        "200":
+          description: Current weather
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Weather"
+  /recommendation:
+    get:
+      operationId: getRecommendation
+      tags: [decisions]
+      summary: Current deterministic irrigation recommendation
+      responses:
+        "200":
+          description: Explained recommendation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recommendation"
+  /analytics:
+    get:
+      operationId: getAnalytics
+      tags: [analytics]
+      summary: Simulated forecast and irrigation strategy comparison
+      responses:
+        "200":
+          description: Forecast and strategy estimates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analytics"
+  /history:
+    get:
+      operationId: getHistory
+      tags: [history]
+      summary: Persisted telemetry and operation history
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, reading, recommendation, irrigation, alert, feedback]
+      responses:
+        "200":
+          description: Chronological history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistoryEvent"
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [preferences]
+      summary: Read saved settings
+      responses:
+        "200":
+          description: Saved app settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    put:
+      operationId: updateSettings
+      tags: [preferences]
+      summary: Save app settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsInput"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+  /calibration:
+    get:
+      operationId: getCalibration
+      tags: [preferences]
+      summary: Read soil calibration points
+      responses:
+        "200":
+          description: Calibration data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Calibration"
+    put:
+      operationId: updateCalibration
+      tags: [preferences]
+      summary: Save dry and wet calibration points
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalibrationInput"
+      responses:
+        "200":
+          description: Updated calibration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Calibration"
+  /irrigation/start:
+    post:
+      operationId: startIrrigation
+      tags: [operations]
+      summary: Start a bounded simulated irrigation session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IrrigationStartInput"
+      responses:
+        "200":
+          description: Active simulated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationSession"
+        "409":
+          description: A session is already active
+  /irrigation/stop:
+    post:
+      operationId: stopIrrigation
+      tags: [operations]
+      summary: Stop an active simulated irrigation session
+      responses:
+        "200":
+          description: Stopped simulated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationSession"
+  /test-scenario:
+    post:
+      operationId: applyTestScenario
+      tags: [operations]
+      summary: Apply clearly labelled test overrides
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestScenarioInput"
+      responses:
+        "200":
+          description: Updated test scenario and recalculated decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldState"
+  /reset:
+    post:
+      operationId: resetField
+      tags: [operations]
+      summary: Reset simulated field and calibration state
+      responses:
+        "200":
+          description: Reset field state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldState"
+  /notifications:
+    get:
+      operationId: getNotifications
+      tags: [history]
+      summary: List in-app notifications
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+  /notifications/{notificationId}/acknowledge:
+    post:
+      operationId: acknowledgeNotification
+      tags: [history]
+      summary: Acknowledge an in-app notification
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Acknowledged notification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+  /feedback:
+    post:
+      operationId: submitFeedback
+      tags: [history]
+      summary: Save farmer feedback on a recommendation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackInput"
+      responses:
+        "201":
+          description: Saved feedback
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryEvent"
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
-
+        status: { type: string }
+      required: [status]
+    DecisionStatus:
+      type: string
+      enum: [WATER NOW, WAIT, CHECK FIELD]
+    Confidence:
+      type: string
+      enum: [High, Medium, Low]
+    Provenance:
+      type: string
+      enum: [simulated, estimated, stale]
+    DecisionFactor:
+      type: object
+      properties:
+        name: { type: string }
+        effect: { type: string, enum: [supports, delays, caution] }
+        detail: { type: string }
+        rank: { type: integer }
+      required: [name, effect, detail, rank]
+    Recommendation:
+      type: object
+      properties:
+        status: { $ref: "#/components/schemas/DecisionStatus" }
+        reason: { type: string }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        durationMinutes: { type: ["integer", "null"] }
+        factors:
+          type: array
+          items: { $ref: "#/components/schemas/DecisionFactor" }
+        updatedAt: { type: string, format: date-time }
+        provenance: { $ref: "#/components/schemas/Provenance" }
+      required: [status, reason, confidence, durationMinutes, factors, updatedAt, provenance]
+    Weather:
+      type: object
+      properties:
+        temperatureC: { type: number }
+        humidityPercent: { type: number }
+        rainingNow: { type: boolean }
+        rainProbability6h: { type: number }
+        precipitationMm6h: { type: number }
+        summary: { type: string }
+        source: { type: string }
+        stale: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+      required: [temperatureC, humidityPercent, rainingNow, rainProbability6h, precipitationMm6h, summary, source, stale, updatedAt]
+    Telemetry:
+      type: object
+      properties:
+        soilMoisture: { type: ["number", "null"] }
+        temperatureC: { type: number }
+        humidityPercent: { type: number }
+        sunlightPercent: { type: number }
+        rainingNow: { type: boolean }
+        sensorFault: { type: boolean }
+        provenance: { $ref: "#/components/schemas/Provenance" }
+        updatedAt: { type: string, format: date-time }
+      required: [soilMoisture, temperatureC, humidityPercent, sunlightPercent, rainingNow, sensorFault, provenance, updatedAt]
+    IrrigationSession:
+      type: object
+      properties:
+        active: { type: boolean }
+        source: { type: string, enum: [manual, automatic] }
+        startedAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        durationMinutes: { type: integer }
+      required: [active, source, startedAt, endsAt, durationMinutes]
+    FieldState:
+      type: object
+      properties:
+        telemetry: { $ref: "#/components/schemas/Telemetry" }
+        weather: { $ref: "#/components/schemas/Weather" }
+        recommendation: { $ref: "#/components/schemas/Recommendation" }
+        irrigation: { $ref: "#/components/schemas/IrrigationSession" }
+        lowThreshold: { type: number }
+        targetMoisture: { type: number }
+        connectionStatus: { type: string, enum: [connected, offline] }
+        testMode: { type: boolean }
+      required: [telemetry, weather, recommendation, irrigation, lowThreshold, targetMoisture, connectionStatus, testMode]
+    ForecastPoint:
+      type: object
+      properties:
+        hours: { type: integer }
+        moisturePercent: { type: number }
+        provenance: { $ref: "#/components/schemas/Provenance" }
+      required: [hours, moisturePercent, provenance]
+    StrategyEstimate:
+      type: object
+      properties:
+        name: { type: string }
+        waterLitres: { type: number }
+        dryStressHours: { type: number }
+        overwateringHours: { type: number }
+        waterSavedPercent: { type: number }
+      required: [name, waterLitres, dryStressHours, overwateringHours, waterSavedPercent]
+    Analytics:
+      type: object
+      properties:
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              at: { type: string, format: date-time }
+              moisturePercent: { type: number }
+            required: [at, moisturePercent]
+        forecast:
+          type: array
+          items: { $ref: "#/components/schemas/ForecastPoint" }
+        strategies:
+          type: array
+          items: { $ref: "#/components/schemas/StrategyEstimate" }
+        forecastLabel: { type: string }
+      required: [history, forecast, strategies, forecastLabel]
+    HistoryEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        category: { type: string, enum: [reading, recommendation, irrigation, alert, feedback] }
+        title: { type: string }
+        detail: { type: string }
+        source: { type: string }
+        at: { type: string, format: date-time }
+      required: [id, category, title, detail, source, at]
+    Settings:
+      type: object
+      properties:
+        language: { type: string, enum: [en, te, hi] }
+        controlMode: { type: string, enum: [advisory, auto] }
+        notificationsEnabled: { type: boolean }
+        quietHoursStart: { type: string }
+        quietHoursEnd: { type: string }
+        maxDurationMinutes: { type: integer, minimum: 1, maximum: 240 }
+        flowLitresPerMinute: { type: number, minimum: 0.1, maximum: 100 }
+        testMode: { type: boolean }
+        latitude: { type: number }
+        longitude: { type: number }
+      required: [language, controlMode, notificationsEnabled, quietHoursStart, quietHoursEnd, maxDurationMinutes, flowLitresPerMinute, testMode, latitude, longitude]
+    SettingsInput:
+      type: object
+      properties:
+        language: { type: string, enum: [en, te, hi] }
+        controlMode: { type: string, enum: [advisory, auto] }
+        notificationsEnabled: { type: boolean }
+        quietHoursStart: { type: string }
+        quietHoursEnd: { type: string }
+        maxDurationMinutes: { type: integer, minimum: 1, maximum: 240 }
+        flowLitresPerMinute: { type: number, minimum: 0.1, maximum: 100 }
+        testMode: { type: boolean }
+        latitude: { type: number }
+        longitude: { type: number }
+      required: [language, controlMode, notificationsEnabled, quietHoursStart, quietHoursEnd, maxDurationMinutes, flowLitresPerMinute, testMode, latitude, longitude]
+    Calibration:
+      type: object
+      properties:
+        dryPoint: { type: number, minimum: 0, maximum: 100 }
+        wetPoint: { type: number, minimum: 0, maximum: 100 }
+        updatedAt: { type: string, format: date-time }
+        lowThreshold: { type: number }
+        targetMoisture: { type: number }
+      required: [dryPoint, wetPoint, updatedAt, lowThreshold, targetMoisture]
+    CalibrationInput:
+      type: object
+      properties:
+        dryPoint: { type: number, minimum: 0, maximum: 100 }
+        wetPoint: { type: number, minimum: 0, maximum: 100 }
+      required: [dryPoint, wetPoint]
+    IrrigationStartInput:
+      type: object
+      properties:
+        durationMinutes: { type: integer, minimum: 1, maximum: 240 }
+      required: [durationMinutes]
+    TestScenarioInput:
+      type: object
+      properties:
+        soilMoisture: { type: ["number", "null"], minimum: 0, maximum: 100 }
+        rainingNow: { type: boolean }
+        rainProbability6h: { type: number, minimum: 0, maximum: 100 }
+        precipitationMm6h: { type: number, minimum: 0, maximum: 200 }
+        sensorFault: { type: boolean }
+      required: [soilMoisture, rainingNow, rainProbability6h, precipitationMm6h, sensorFault]
+    Notification:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        detail: { type: string }
+        acknowledged: { type: boolean }
+        at: { type: string, format: date-time }
+      required: [id, title, detail, acknowledged, at]
+    FeedbackInput:
+      type: object
+      properties:
+        helpful: { type: boolean }
+        comment: { type: string, maxLength: 1000 }
+      required: [helpful, comment]

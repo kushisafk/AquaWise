@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
-    "build": "node ./build.mjs",
-    "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "dev": "uv run --project ../.. -- python -m uvicorn main:app --app-dir . --host 0.0.0.0 --port ${PORT:-8080}",
+    "build": "uv run --project ../.. -- python -m compileall -q .",
+    "start": "uv run --project ../.. -- python -m uvicorn main:app --app-dir . --host 0.0.0.0 --port ${PORT:-8080}",
+    "typecheck": "uv run --project ../.. -- python -m compileall -q main.py engine.py forecasting.py"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

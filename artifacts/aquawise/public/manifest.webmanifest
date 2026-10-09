@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "AquaWise — Weather-Aware Irrigation",
+  "short_name": "AquaWise",
+  "description": "Explainable irrigation guidance for farmers, with simulated readings and controls.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f6f7f1",
+  "theme_color": "#234d3f",
+  "icons": [
+    {
+      "src": "/icons/aquawise-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/aquawise-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
