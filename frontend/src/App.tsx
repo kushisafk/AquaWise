@@ -94,7 +94,7 @@ function AppShell({ children }: { children: ReactNode }) {
               </span>
               <button aria-label={tr(lang, 'alertTitle')} className="icon-btn" onClick={() => setAlertsOpen(!alertsOpen)} data-testid="button-alerts">
                 <Bell size={17} strokeWidth={1.8} />
-                {unread.length > 0 && <span className="badge-count">{unread.length}</span>}
+                {unread.length > 0 && <span className="notification-dot" />}
               </button>
               <Link href="/settings" className="icon-btn" aria-label={tr(lang, 'settings')}>
                 <Settings2 size={17} strokeWidth={1.8} />

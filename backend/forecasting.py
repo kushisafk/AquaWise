@@ -147,49 +147,124 @@ def strategy_comparison(
     rain_mm: float,
     flow_litres_per_minute: float,
 ) -> list[dict[str, Any]]:
+    """Compare 4 irrigation strategies over a 48h horizon under identical simulated conditions.
+
+    All strategies share:
+    - Same initial soil moisture and thresholds.
+    - Same weather (temperature, humidity, sunlight, rain).
+    - Same soil evaporation and absorption model.
+    - Same assumed flow-rate parameter (litres per minute).
+
+    Strategies:
+    - Fixed schedule: Conventional timer watering (15 min every 12h = 60 min total in 48h).
+    - Moisture threshold: Waters only when moisture drops below low threshold, with a 4h cooldown.
+    - Rain-aware threshold: Responsive watering, but delays if meaningful rain (>=60% chance, >=2mm) is expected within 6h.
+    - Optimized schedule: Predictive scheduling that balances stress prevention and water conservation.
+    """
     names = ["Fixed schedule", "Moisture threshold", "Rain-aware threshold", "Optimized schedule"]
+    descriptions = {
+        "Fixed schedule": "Timer baseline: Waters on a rigid calendar schedule (15 min every 12h) regardless of soil or rain.",
+        "Moisture threshold": "Sensor threshold: Waters 15 min when soil drops below threshold, with rest intervals.",
+        "Rain-aware threshold": "Weather-aware: Waters below threshold, but pauses if meaningful rain is forecasted within 6 hours.",
+        "Optimized schedule": "Predictive water-smart: Calculates targeted durations to reach target moisture while leveraging rain forecasts.",
+    }
     totals: dict[str, dict[str, float]] = {
         name: {"water": 0.0, "stress": 0.0, "over": 0.0}
         for name in names
     }
-    levels = {name: moisture for name in names}
+    levels = {name: max(0.0, min(100.0, float(moisture))) for name in names}
+    last_watered = {name: -10 for name in names}
     meaningful_rain = rain_probability >= 60 and rain_mm >= 2
+    flow_rate = max(0.1, float(flow_litres_per_minute))
+    wet_ceiling = min(100.0, target + 8.0)
+
+    # Simulate 48 hourly steps under identical conditions
     for hour in range(48):
         for name in names:
             level = levels[name]
             if level < low_threshold:
-                totals[name]["stress"] += 1
-            if level > target + 10:
-                totals[name]["over"] += 1
+                totals[name]["stress"] += 1.0
+            if level > wet_ceiling:
+                totals[name]["over"] += 1.0
+
             should_water = False
             minutes = 0
-            if name == "Fixed schedule" and hour % 12 == 0:
-                should_water, minutes = True, 10
-            elif name == "Moisture threshold" and level < low_threshold:
-                should_water, minutes = True, 10
-            elif name == "Rain-aware threshold" and level < low_threshold and not meaningful_rain:
-                should_water, minutes = True, 10
-            elif name == "Optimized schedule" and (
-                level < low_threshold
-                or (hour < 6 and rain_probability < 60 and
-                    level - _drying_rate(temperature, humidity, sunlight) * 6 < low_threshold)
-            ) and not (hour < 6 and meaningful_rain):
-                should_water, minutes = True, 8
-            simulated_rain = rain_mm / 6 if hour < 6 and meaningful_rain else 0
+            cooldown_ok = (hour - last_watered[name]) >= 4
+
+            if name == "Fixed schedule":
+                # Conventional practice: waters at hour 6, 18, 30, 42
+                if hour % 12 == 6:
+                    should_water, minutes = True, 15
+            elif name == "Moisture threshold":
+                # Waters when dry with cooldown
+                if level < low_threshold and cooldown_ok:
+                    should_water, minutes = True, 15
+            elif name == "Rain-aware threshold":
+                # Waters when dry with cooldown, unless rain is imminent
+                rain_imminent = (hour < 6 and meaningful_rain)
+                if level < low_threshold and cooldown_ok and not rain_imminent:
+                    should_water, minutes = True, 15
+            elif name == "Optimized schedule":
+                # Predictive: checks if currently dry or drying will push below threshold within 4h
+                drying_step = _drying_rate(temperature, humidity, sunlight)
+                will_dry_soon = (hour < 6 and not meaningful_rain and (level - drying_step * 3) < low_threshold)
+                rain_imminent = (hour < 6 and meaningful_rain)
+                if (level < low_threshold or will_dry_soon) and cooldown_ok and not rain_imminent:
+                    # Targeted volume to reach target without overshooting
+                    deficit = max(4.0, min(30.0, target - level))
+                    calc_minutes = max(8, min(25, round(deficit / 0.28)))
+                    should_water, minutes = True, calc_minutes
+
+            simulated_rain = (rain_mm / 6.0) if (hour < 6 and meaningful_rain) else 0.0
             level = _balance(
                 level, 1, temperature, humidity, sunlight, simulated_rain,
                 minutes if should_water else 0,
             )
             if should_water:
-                totals[name]["water"] += minutes * flow_litres_per_minute
-            levels[name] = level
-    fixed = max(totals[names[0]]["water"], 0.01)
-    return [{
-        "name": name,
-        "waterLitres": round(totals[name]["water"], 1),
-        "dryStressHours": round(totals[name]["stress"], 1),
-        "overwateringHours": round(totals[name]["over"], 1),
-        "waterSavedPercent": round(
-            max(-100, min(100, (fixed - totals[name]["water"]) / fixed * 100)), 1,
-        ),
-    } for name in names]
+                totals[name]["water"] += minutes * flow_rate
+                last_watered[name] = hour
+            levels[name] = max(0.0, min(100.0, level))
+
+    baseline_water = totals["Fixed schedule"]["water"]
+
+    results = []
+    for name in names:
+        candidate_water = totals[name]["water"]
+        if baseline_water > 0:
+            savings_pct = round((baseline_water - candidate_water) / baseline_water * 100.0, 1)
+        else:
+            savings_pct = 0.0 if candidate_water == 0 else -100.0
+
+        if savings_pct > 0:
+            savings_type = "saved"
+        elif savings_pct < 0:
+            savings_type = "increased"
+        else:
+            savings_type = "neutral"
+
+        # Determine if strategy is recommended based on stress prevention and efficiency
+        is_recommended = False
+        if name == "Optimized schedule":
+            # Recommended if it has lower or equal stress than fixed and doesn't waste excessive water
+            is_recommended = totals[name]["stress"] <= totals["Fixed schedule"]["stress"]
+        elif name == "Rain-aware threshold" and not is_recommended:
+            is_recommended = (
+                totals[name]["stress"] <= totals["Fixed schedule"]["stress"]
+                and totals[name]["water"] < totals["Fixed schedule"]["water"]
+            )
+
+        results.append({
+            "name": name,
+            "description": descriptions[name],
+            "waterLitres": round(candidate_water, 1),
+            "dryStressHours": int(totals[name]["stress"]),
+            "overwateringHours": int(totals[name]["over"]),
+            "waterSavedPercent": savings_pct,
+            "savingsType": savings_type,
+            "isBaseline": (name == "Fixed schedule"),
+            "isRecommended": is_recommended,
+            "assumedFlowRateLpm": flow_rate,
+            "isFlowRateConfigured": True,
+        })
+
+    return results

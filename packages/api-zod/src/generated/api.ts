@@ -128,7 +128,13 @@ export const GetAnalyticsResponse = zod.object({
   "waterLitres": zod.number(),
   "dryStressHours": zod.number(),
   "overwateringHours": zod.number(),
-  "waterSavedPercent": zod.number()
+  "waterSavedPercent": zod.number(),
+  "description": zod.string().optional(),
+  "savingsType": zod.string().optional(),
+  "isBaseline": zod.boolean().optional(),
+  "isRecommended": zod.boolean().optional(),
+  "assumedFlowRateLpm": zod.number().optional(),
+  "isFlowRateConfigured": zod.boolean().optional()
 })),
   "forecastLabel": zod.string()
 })
@@ -137,8 +143,16 @@ export const GetAnalyticsResponse = zod.object({
 /**
  * @summary Persisted telemetry and operation history
  */
+export const getHistoryQueryLimitMax = 250;
+
+export const getHistoryQueryOffsetMin = 0;
+
+
+
 export const GetHistoryQueryParams = zod.object({
-  "category": zod.enum(['all', 'reading', 'recommendation', 'irrigation', 'alert', 'feedback']).optional()
+  "category": zod.enum(['all', 'reading', 'recommendation', 'irrigation', 'alert', 'feedback']).optional(),
+  "limit": zod.coerce.number().int().min(1).max(getHistoryQueryLimitMax).optional(),
+  "offset": zod.coerce.number().int().min(getHistoryQueryOffsetMin).optional()
 })
 
 export const GetHistoryResponseItem = zod.object({

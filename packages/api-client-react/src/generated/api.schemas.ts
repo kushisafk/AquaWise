@@ -136,6 +136,12 @@ export interface StrategyEstimate {
   dryStressHours: number;
   overwateringHours: number;
   waterSavedPercent: number;
+  description?: string;
+  savingsType?: string;
+  isBaseline?: boolean;
+  isRecommended?: boolean;
+  assumedFlowRateLpm?: number;
+  isFlowRateConfigured?: boolean;
 }
 
 export type AnalyticsHistoryItem = {
@@ -320,6 +326,15 @@ export interface FeedbackInput {
 
 export type GetHistoryParams = {
 category?: GetHistoryCategory;
+/**
+ * @minimum 1
+ * @maximum 250
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };
 
 export type GetHistoryCategory = typeof GetHistoryCategory[keyof typeof GetHistoryCategory];

@@ -14,9 +14,9 @@ import te from '@/locales/te';
 import hi from '@/locales/hi';
 import { useAquaWise, tr } from '@/App';
 import {
-  AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronRight, CloudRain,
+  AlertTriangle, ArrowRight, Check, ChevronDown, CloudRain,
   Droplet, Droplets, History, Info, Leaf, LoaderCircle, RefreshCw,
-  RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Sprout, Sun,
+  RotateCcw, ShieldCheck, SlidersHorizontal, Sprout, Sun,
   ThumbsDown, ThumbsUp, Volume2, WifiOff
 } from 'lucide-react';
 import { Link } from 'wouter';
@@ -103,8 +103,17 @@ function localizedStrategy(name: string, lang: 'en' | 'te' | 'hi') {
   return key ? tx(lang, key) : name;
 }
 
+const LOCATION_PRESETS = [
+  { label: 'Vijayawada, Andhra Pradesh', lat: 16.5062, lon: 80.6480 },
+  { label: 'Hyderabad, Telangana', lat: 17.3850, lon: 78.4867 },
+  { label: 'Guntur, Andhra Pradesh', lat: 16.3067, lon: 80.4365 },
+  { label: 'Amaravati, Andhra Pradesh', lat: 16.5131, lon: 80.5165 },
+  { label: 'Nagpur, Maharashtra', lat: 21.1458, lon: 79.0882 },
+  { label: 'Bengaluru, Karnataka', lat: 12.9716, lon: 77.5946 },
+];
+
 // ==========================================
-// 1. HOME SCREEN (Radically Simplified)
+// 1. HOME SCREEN (Simple, Consumer-Friendly)
 // ==========================================
 export function DashboardPage() {
   const { lang, notify, stale: appStale } = useAquaWise();
@@ -169,21 +178,53 @@ export function DashboardPage() {
       notify(tx(l, 'voiceUnavailable'));
       return;
     }
-    if (!recommendation) return;
+    if (!recommendation && !isWatering) return;
     const voices = window.speechSynthesis.getVoices();
     const voice = voices.find((item) => item.lang.toLowerCase().startsWith(l));
     if (l !== 'en' && !voice) {
       notify(tx(l, 'voiceMissing'));
       return;
     }
-    const localizedStatus = recommendation.status === 'WATER NOW'
-      ? (l === 'te' ? 'ఇప్పుడు నీరు పెట్టండి' : l === 'hi' ? 'अभी सिंचाई करें' : 'Water now')
-      : recommendation.status === 'WAIT'
-        ? (l === 'te' ? 'వేచి ఉండండి' : l === 'hi' ? 'प्रतीक्षा करें' : 'Wait')
-        : (l === 'te' ? 'పొలాన్ని తనిఖీ చేయండి' : l === 'hi' ? 'खेत की जांच करें' : 'Check the field');
-    const utterance = new SpeechSynthesisUtterance(
-      `${localizedStatus}. ${recommendation.reason}. ${tx(l, 'duration')}: ${recommendation.durationMinutes} ${tx(l, 'minutes')}.`
-    );
+
+    const duration = recommendation?.durationMinutes ?? state?.irrigation.durationMinutes ?? 15;
+    let spokenText = '';
+
+    if (isWatering) {
+      spokenText = l === 'te'
+        ? `${duration} నిమిషాలు నీరు పెట్టడం జరుగుతోంది.`
+        : l === 'hi'
+          ? `${duration} मिनट के लिए सिंचाई चल रही है।`
+          : `Watering is running for ${duration} minutes.`;
+    } else if (status === 'WATER NOW') {
+      spokenText = l === 'te'
+        ? `మీ పొలానికి ${duration} నిమిషాలు నీరు పెట్టండి. నేల ఎండిపోయింది.`
+        : l === 'hi'
+          ? `अपने खेत में ${duration} मिनट पानी दें। मिट्टी सूखी है।`
+          : `Water your field for ${duration} minutes. The soil is dry.`;
+    } else if (status === 'CHECK FIELD') {
+      spokenText = l === 'te'
+        ? 'దయచేసి మీ పొలాన్ని తనిఖీ చేయండి. తేమ రీడింగ్ సరిగా లేదు.'
+        : l === 'hi'
+          ? 'कृपया अपना खेत देखें। नमी सामान्य नहीं है।'
+          : 'Please check your field. The soil reading looks unusual.';
+    } else {
+      const isRain = weather.data?.rainingNow || (weather.data?.rainProbability6h ?? 0) >= 50;
+      if (isRain) {
+        spokenText = l === 'te'
+          ? 'వేచి ఉండండి, త్వరలో వర్షం రానుంది. నీరు పెట్టవద్దు.'
+          : l === 'hi'
+            ? 'इंतज़ार करें, जल्द बारिश हो सकती है। पानी न दें।'
+            : 'Wait, rain is coming soon. No need to water.';
+      } else {
+        spokenText = l === 'te'
+          ? 'ఇప్పుడు నీరు అవసరం లేదు. నేలలో సరిపడా తేమ ఉంది.'
+          : l === 'hi'
+            ? 'अभी पानी देने की ज़रूरत नहीं है। मिट्टी में पर्याप्त नमी है।'
+            : 'No need to water right now. Your soil has enough moisture.';
+      }
+    }
+
+    const utterance = new SpeechSynthesisUtterance(spokenText);
     utterance.lang = l === 'te' ? 'te-IN' : l === 'hi' ? 'hi-IN' : 'en-IN';
     if (voice) utterance.voice = voice;
     utterance.onerror = () => notify(tx(l, 'voiceError'));
@@ -199,10 +240,9 @@ export function DashboardPage() {
     );
   }
 
-  const isWatering = state?.irrigation.active;
+  const isWatering = Boolean(state?.irrigation.active);
   const status = recommendation?.status;
 
-  // Visual status tone
   const statusTone = isWatering
     ? 'watering'
     : status === 'WATER NOW'
@@ -211,7 +251,6 @@ export function DashboardPage() {
         ? 'check-field'
         : 'wait';
 
-  // Dominant recommendation display
   let dominantTitle = tx(l, 'allSet');
   if (isWatering) {
     dominantTitle = tx(l, 'activeSession');
@@ -222,7 +261,11 @@ export function DashboardPage() {
   }
 
   const explanation = isWatering
-    ? (l === 'te' ? 'నీరు పెట్టే చక్రం చురుకుగా సాగుతోంది.' : l === 'hi' ? 'सिंचाई चक्र सक्रिय रूप से चल रहा है।' : `Watering cycle in progress. Remaining runtime: ${recommendation?.durationMinutes ?? 15} min.`)
+    ? (l === 'te'
+        ? `నీరు పెట్టడం జరుగుతోంది (${state?.irrigation.durationMinutes ?? 15} నిమిషాలు).`
+        : l === 'hi'
+          ? `सिंचाई चल रही है (${state?.irrigation.durationMinutes ?? 15} मिनट)।`
+          : `Watering right now for ${state?.irrigation.durationMinutes ?? 15} minutes.`)
     : (recommendation?.reason || tx(l, 'reasonFallback'));
 
   return (
@@ -243,20 +286,13 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Hero Recommendation Section */}
+      {/* Dominant Hero Recommendation Card (Clean, No Pills) */}
       <section className={`calm-hero tone-${statusTone}`} data-testid="card-recommendation">
-        <div className="hero-status-pill">
-          <span className="status-indicator-dot" />
-          <span className="status-indicator-label">
-            {isWatering ? tx(l, 'session') : (status || 'READY')}
-          </span>
-        </div>
-
         <h1 className="hero-dominant-title">{dominantTitle}</h1>
 
         <p className="hero-explanation">{explanation}</p>
 
-        {/* Primary Action Button */}
+        {/* Primary Single Action */}
         <div className="hero-actions-container">
           {isWatering ? (
             <button
@@ -276,11 +312,16 @@ export function DashboardPage() {
               data-testid="button-start-irrigation"
             >
               {start.isPending ? <LoaderCircle size={18} className="animate-spin" /> : <Droplets size={18} />}
-              <span>{tx(l, 'water')}</span>
-              {recommendation?.durationMinutes && (
-                <span className="btn-badge">{recommendation.durationMinutes} {tx(l, 'minutes')}</span>
-              )}
+              <span>
+                {tx(l, 'water')}
+                {recommendation?.durationMinutes ? ` (${recommendation.durationMinutes} ${tx(l, 'minutes')})` : ''}
+              </span>
             </button>
+          ) : status === 'CHECK FIELD' ? (
+            <Link href="/settings#calibration" className="btn btn-prominent-action" data-testid="button-troubleshoot-field">
+              <span>{tx(l, 'troubleshootField')}</span>
+              <ArrowRight size={17} />
+            </Link>
           ) : (
             <Link href="/analytics" className="btn btn-prominent-action" data-testid="button-view-insights">
               <span>{tx(l, 'viewInsights')}</span>
@@ -356,7 +397,7 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* Discreet Feedback & Status Meta Bar */}
+      {/* Discreet Feedback & Data Freshness Bar */}
       <div className="home-footer-meta">
         <span className="subtle">
           {tx(l, 'updated')} {fmtTime(recommendation?.updatedAt)} · {tx(l, 'simulatedNotice')}
@@ -364,22 +405,22 @@ export function DashboardPage() {
         <div className="home-feedback-inline">
           <span className="feedback-prompt">{tx(l, 'feedback')}</span>
           <button
-            className="feedback-pill-btn"
+            className="feedback-btn"
             disabled={feedback.isPending || !recommendation}
             onClick={() => sendFeedback(true)}
             data-testid="button-feedback-yes"
             title={tx(l, 'helpful')}
           >
-            <ThumbsUp size={13} />
+            <ThumbsUp size={14} />
           </button>
           <button
-            className="feedback-pill-btn"
+            className="feedback-btn"
             disabled={feedback.isPending || !recommendation}
             onClick={() => sendFeedback(false)}
             data-testid="button-feedback-no"
             title={tx(l, 'notHelpful')}
           >
-            <ThumbsDown size={13} />
+            <ThumbsDown size={14} />
           </button>
         </div>
       </div>
@@ -388,48 +429,76 @@ export function DashboardPage() {
 }
 
 // ==========================================
-// 2. INSIGHTS SCREEN (Why & Forecast)
+// 2. INSIGHTS SCREEN (Progressive Disclosure)
 // ==========================================
 function Chart({ data }: { data: Analytics }) {
   const history = data.history || [];
   const forecast = data.forecast || [];
-  const points = [
-    ...history.map((x, i) => ({
-      x: 42 + i * (250 / Math.max(history.length - 1, 1)),
-      y: 180 - x.moisturePercent * 1.38,
-    })),
-    ...forecast.map((x, i) => ({
-      x: (history.length ? 292 : 42) + (i + 1) * (215 / Math.max(forecast.length, 1)),
-      y: 180 - x.moisturePercent * 1.38,
-    })),
-  ];
-  const d = points.map((p, i) => `${i ? 'L' : 'M'}${p.x},${Math.max(25, Math.min(180, p.y))}`).join(' ');
-  const cutoff = history.length ? 42 + (history.length - 1) * (250 / Math.max(history.length - 1, 1)) : 42;
+
+  // Bounded Y-scale: 0% at y=180, 100% at y=25 (height 155px)
+  const getY = (val: number) => {
+    const clamped = Math.max(0, Math.min(100, val));
+    return 180 - (clamped / 100) * 155;
+  };
+
+  const histPoints = history.map((x, i) => ({
+    x: 42 + i * (250 / Math.max(history.length - 1, 1)),
+    y: getY(x.moisturePercent),
+  }));
+
+  const cutoffX = history.length ? 42 + (history.length - 1) * (250 / Math.max(history.length - 1, 1)) : 42;
+
+  const forePoints = forecast.map((x, i) => ({
+    x: cutoffX + (i + 1) * (215 / Math.max(forecast.length, 1)),
+    y: getY(x.moisturePercent),
+  }));
+
+  const allPoints = [...histPoints, ...forePoints];
+  const histPath = histPoints.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join(' ');
+  const forePath = [
+    histPoints.at(-1) ? `M${histPoints.at(-1)!.x},${histPoints.at(-1)!.y}` : '',
+    ...forePoints.map((p, i) => `${i === 0 && !histPoints.length ? 'M' : 'L'}${p.x},${p.y}`)
+  ].filter(Boolean).join(' ');
 
   return (
-    <svg className="chart-svg" viewBox="0 0 540 220" role="img" aria-label={`${history.length} observed readings and ${forecast.length} forecast points`}>
-      {[40, 80, 120, 160].map((y) => (
-        <g key={y}>
-          <line x1="42" x2="520" y1={y} y2={y} stroke="#edf2eb" strokeDasharray="3 4" />
-          <text x="7" y={y + 4} className="chart-axis">{Math.round((180 - y) / 1.38)}%</text>
-        </g>
-      ))}
-      <line x1={cutoff} x2={cutoff} y1="30" y2="182" stroke="#d5ded3" strokeDasharray="4 4" />
-      {points.length > 1 && (
-        <path d={d} fill="none" stroke="#1b4332" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className="chart-svg" viewBox="0 0 540 220" role="img" aria-label={`Moisture chart: ${history.length} observed, ${forecast.length} forecast points`}>
+      {/* Horizontal guide lines */}
+      {[0, 25, 50, 75, 100].map((pct) => {
+        const y = getY(pct);
+        return (
+          <g key={pct}>
+            <line x1="42" x2="520" y1={y} y2={y} stroke="#edf2eb" strokeDasharray="3 4" />
+            <text x="7" y={y + 4} className="chart-axis">{pct}%</text>
+          </g>
+        );
+      })}
+
+      {/* Now boundary line */}
+      <line x1={cutoffX} x2={cutoffX} y1="20" y2="185" stroke="#d5ded3" strokeDasharray="4 4" />
+
+      {/* Historical path */}
+      {histPoints.length > 1 && (
+        <path d={histPath} fill="none" stroke="#1b4332" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       )}
-      {history.map((p, i) => {
-        const x = 42 + i * (250 / Math.max(history.length - 1, 1));
-        const y = Math.max(25, Math.min(180, 180 - p.moisturePercent * 1.38));
-        return <circle key={`h-${i}`} cx={x} cy={y} r="3.5" fill="#1b4332" />;
-      })}
-      {forecast.map((p, i) => {
-        const x = (history.length ? 292 : 42) + (i + 1) * (215 / Math.max(forecast.length, 1));
-        const y = Math.max(25, Math.min(180, 180 - p.moisturePercent * 1.38));
-        return <circle key={`f-${i}`} cx={x} cy={y} r="3.5" fill="#c48a36" />;
-      })}
-      <text x="42" y="206" className="chart-axis">{history.length ? 'Past readings' : 'Current'}</text>
-      <text x="450" y="206" className="chart-axis">+{forecast.at(-1)?.hours ?? 0}h forecast</text>
+
+      {/* Forecast path */}
+      {forePoints.length > 0 && (
+        <path d={forePath} fill="none" stroke="#c48a36" strokeWidth="2" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+
+      {/* Historical points */}
+      {histPoints.map((p, i) => (
+        <circle key={`h-${i}`} cx={p.x} cy={p.y} r="3.5" fill="#1b4332" />
+      ))}
+
+      {/* Forecast points */}
+      {forePoints.map((p, i) => (
+        <circle key={`f-${i}`} cx={p.x} cy={p.y} r="3.5" fill="#c48a36" />
+      ))}
+
+      <text x="42" y="206" className="chart-axis">{history.length ? 'Past 24h' : 'Current'}</text>
+      <text x={Math.max(42, cutoffX - 12)} y="206" className="chart-axis" style={{ fontWeight: 600 }}>Now</text>
+      <text x="450" y="206" className="chart-axis">+{forecast.at(-1)?.hours ?? 48}h forecast</text>
     </svg>
   );
 }
@@ -439,8 +508,21 @@ export function AnalyticsPage() {
   const l = lang as 'en' | 'te' | 'hi';
   const query = useGetAnalytics({ query: { queryKey: getGetAnalyticsQueryKey(), refetchInterval: 60_000 } });
   const rec = useGetRecommendation({ query: { queryKey: getGetRecommendationQueryKey(), refetchInterval: 60_000 } });
+  const field = useGetFieldState({ query: { queryKey: getGetFieldStateQueryKey(), refetchInterval: 60_000 } });
   const data = query.data;
   const recommendation = rec.data;
+
+  // Collapsible sections
+  const [showStrategies, setShowStrategies] = useState(false);
+  const [showHourly, setShowHourly] = useState(false);
+  const [showFactors, setShowFactors] = useState(false);
+  const [showModelDetails, setShowModelDetails] = useState(false);
+
+  const bestStrategy = data?.strategies?.find((s) => (s as { isRecommended?: boolean }).isRecommended)
+    || data?.strategies?.find((s) => s.name === 'Optimized schedule')
+    || data?.strategies?.[0];
+
+  const baselineStrategy = data?.strategies?.find((s) => s.name === 'Fixed schedule');
 
   return (
     <Page>
@@ -455,12 +537,14 @@ export function AnalyticsPage() {
 
       {data && (
         <div className="insights-container">
-          {/* Main Chart Section */}
+          {/* Default 1: Concise Moisture Outlook & Chart */}
           <section className="calm-card" data-testid="chart-moisture">
             <div className="section-header">
               <div>
                 <h2 className="section-title-clean">{tx(l, 'moisture')}</h2>
-                <p className="section-subtitle-clean">{tx(l, 'forecastLabel')}: {data.forecastLabel}</p>
+                <p className="section-subtitle-clean">
+                  {tx(l, 'forecastLabel')}: {data.forecastLabel}
+                </p>
               </div>
               <div className="chart-legend-clean">
                 <span className="legend-item"><i className="legend-dot observed" />{tx(l, 'observed')}</span>
@@ -479,100 +563,223 @@ export function AnalyticsPage() {
             )}
           </section>
 
-          {/* Contributing Decision Factors */}
-          <section className="calm-card" data-testid="card-decision-factors">
-            <div className="section-header">
-              <div>
-                <h2 className="section-title-clean">{tx(l, 'reasons')}</h2>
-                <p className="section-subtitle-clean">{tx(l, 'confidence')}: {recommendation?.confidence ?? 'High'} · {tx(l, 'source')}: {recommendation?.provenance ?? 'Simulated'}</p>
+          {/* Default 2: Preferred Irrigation Schedule Summary */}
+          {bestStrategy && baselineStrategy && (
+            <section className="calm-card" data-testid="card-preferred-strategy">
+              <div className="section-header">
+                <div>
+                  <div className="strategy-badge-recommended" style={{ marginBottom: 6 }}>
+                    <Check size={12} />
+                    <span>{tx(l, 'preferredSchedule')}</span>
+                  </div>
+                  <h2 className="section-title-clean">{localizedStrategy(bestStrategy.name, l)}</h2>
+                  <p className="section-subtitle-clean">
+                    {(bestStrategy as { description?: string }).description || 'Predictive water management plan'}
+                  </p>
+                </div>
+                <div className="strategy-number">
+                  {bestStrategy.waterLitres} <span className="unit">{tx(l, 'litres')}</span>
+                </div>
               </div>
-              <ShieldCheck size={20} color="#1b4332" />
-            </div>
 
-            {recommendation?.factors?.length ? (
-              <div className="clean-list">
-                {recommendation.factors
-                  .slice()
-                  .sort((a, b) => a.rank - b.rank)
-                  .map((factor, index) => (
-                    <article className="factor-row" key={`${factor.name}-${index}`}>
-                      <div className="factor-info">
-                        <span className="factor-rank">{factor.rank}</span>
-                        <div>
-                          <div className="factor-name">{factor.name}</div>
-                          <div className="factor-detail">{factor.detail}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginTop: 12 }}>
+                <div className="summary-chip" style={{ padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tx(l, 'saving')}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700 }} className={bestStrategy.waterSavedPercent > 0 ? 'badge-savings-positive' : bestStrategy.waterSavedPercent < 0 ? 'badge-savings-negative' : 'badge-savings-neutral'}>
+                    {bestStrategy.waterSavedPercent > 0 ? `+${bestStrategy.waterSavedPercent}%` : `${bestStrategy.waterSavedPercent}%`}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-subtle)', marginTop: 2 }}>
+                    {tx(l, 'baselineComparison')} ({baselineStrategy.waterLitres} L)
+                  </div>
+                </div>
+
+                <div className="summary-chip" style={{ padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tx(l, 'stress')}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: bestStrategy.dryStressHours === 0 ? '#2b6d41' : '#9c651e' }}>
+                    {bestStrategy.dryStressHours}h
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-subtle)', marginTop: 2 }}>
+                    under {field.data?.lowThreshold ?? 32.5}% threshold
+                  </div>
+                </div>
+
+                <div className="summary-chip" style={{ padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tx(l, 'overwatering')}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-main)' }}>
+                    {bestStrategy.overwateringHours}h
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-subtle)', marginTop: 2 }}>
+                    above optimal target
+                  </div>
+                </div>
+              </div>
+
+              <div className="strategy-assumptions-box">
+                {tx(l, 'flowRateAssumption').replace('{rate}', String((bestStrategy as { assumedFlowRateLpm?: number }).assumedFlowRateLpm || 12))}
+              </div>
+            </section>
+          )}
+
+          {/* Collapsible 1: All 4 Strategies Compared */}
+          <section className="calm-card" data-testid="card-all-strategies">
+            <button
+              type="button"
+              className="collapsible-trigger"
+              onClick={() => setShowStrategies(!showStrategies)}
+              data-testid="button-toggle-strategies"
+            >
+              <div>
+                <h2 className="section-title-clean">{tx(l, 'strategies')} (4)</h2>
+                <p className="section-subtitle-clean">Compare water use, drought stress and timer baseline</p>
+              </div>
+              <ChevronDown size={18} style={{ transform: showStrategies ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </button>
+
+            {showStrategies && data.strategies && (
+              <div className="collapsible-panel">
+                <div className="clean-list">
+                  {data.strategies.map((strategy, i) => (
+                    <article className="strategy-clean-row" key={`${strategy.name}-${i}`}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="strategy-name">{localizedStrategy(strategy.name, l)}</span>
+                          {strategy.name === 'Fixed schedule' && (
+                            <span className="summary-chip" style={{ fontSize: 10, padding: '2px 6px' }}>Baseline</span>
+                          )}
+                          {(strategy as { isRecommended?: boolean }).isRecommended && (
+                            <span className="strategy-badge-recommended" style={{ fontSize: 10, padding: '2px 6px' }}>
+                              Recommended
+                            </span>
+                          )}
+                        </div>
+                        <div className="strategy-detail">
+                          {(strategy as { description?: string }).description || ''}
+                        </div>
+                        <div className="strategy-detail" style={{ marginTop: 4 }}>
+                          {tx(l, 'stress')}: {strategy.dryStressHours}h · {tx(l, 'overwatering')}: {strategy.overwateringHours}h ·{' '}
+                          <span className={strategy.waterSavedPercent > 0 ? 'badge-savings-positive' : strategy.waterSavedPercent < 0 ? 'badge-savings-negative' : 'badge-savings-neutral'}>
+                            {strategy.waterSavedPercent > 0
+                              ? `${strategy.waterSavedPercent}% ${tx(l, 'savings')}`
+                              : strategy.waterSavedPercent < 0
+                                ? `${Math.abs(strategy.waterSavedPercent)}% ${tx(l, 'increasedUse')}`
+                                : '0% (Equal water)'}
+                          </span>
                         </div>
                       </div>
-                      <span className={`factor-badge ${effectClass(factor.effect)}`}>
-                        {effectText(factor.effect, l)}
-                      </span>
+                      <div className="strategy-number">
+                        {strategy.waterLitres} <span className="unit">{tx(l, 'litres')}</span>
+                      </div>
                     </article>
                   ))}
-              </div>
-            ) : (
-              <div className="empty-state" style={{ padding: '24px 8px' }}>
-                <Info size={22} />
-                <p>{tx(l, 'noFactors')}</p>
+                </div>
               </div>
             )}
           </section>
 
-          {/* Strategy Comparison */}
-          <section className="calm-card">
-            <div className="section-header">
+          {/* Collapsible 2: Hourly Forecast Breakdown */}
+          <section className="calm-card" data-testid="card-hourly-forecast">
+            <button
+              type="button"
+              className="collapsible-trigger"
+              onClick={() => setShowHourly(!showHourly)}
+              data-testid="button-toggle-hourly"
+            >
               <div>
-                <h2 className="section-title-clean">{tx(l, 'strategies')}</h2>
-                <p className="section-subtitle-clean">Water usage and stress predictions over 48 hours</p>
+                <h2 className="section-title-clean">{tx(l, 'hourlyOutlook')}</h2>
+                <p className="section-subtitle-clean">Predicted soil moisture from +1h to +48h</p>
               </div>
-              <Droplets size={20} color="#1b4332" />
-            </div>
+              <ChevronDown size={18} style={{ transform: showHourly ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </button>
 
-            {data.strategies?.length ? (
-              <div className="clean-list">
-                {data.strategies.map((strategy, i) => (
-                  <article className="strategy-clean-row" key={`${strategy.name}-${i}`}>
-                    <div>
-                      <div className="strategy-name">{localizedStrategy(strategy.name, l)}</div>
-                      <div className="strategy-detail">
-                        {tx(l, 'stress')}: {strategy.dryStressHours}h · {tx(l, 'overwatering')}: {strategy.overwateringHours}h · {tx(l, 'saving')}: {strategy.waterSavedPercent}%
-                      </div>
-                    </div>
-                    <div className="strategy-number">
-                      {strategy.waterLitres} <span className="unit">{tx(l, 'litres')}</span>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <p>{tx(l, 'noForecast')}</p>
+            {showHourly && data.forecast && (
+              <div className="collapsible-panel">
+                <div className="clean-list">
+                  {data.forecast.map((point, i) => (
+                    <article className="forecast-timeline-row" key={`${point.hours}-${i}`}>
+                      <div className="timeline-hour">+{point.hours}h</div>
+                      <div className="timeline-meta">{point.provenance} · {tx(l, 'simulatedNotice')}</div>
+                      <div className="timeline-value">{point.moisturePercent}%</div>
+                    </article>
+                  ))}
+                </div>
               </div>
             )}
           </section>
 
-          {/* Hourly Forecast Outlook */}
-          <section className="calm-card">
-            <div className="section-header">
+          {/* Collapsible 3: Contributing Factors */}
+          <section className="calm-card" data-testid="card-decision-factors">
+            <button
+              type="button"
+              className="collapsible-trigger"
+              onClick={() => setShowFactors(!showFactors)}
+              data-testid="button-toggle-factors"
+            >
               <div>
-                <h2 className="section-title-clean">{tx(l, 'forecastLabel')}</h2>
-                <p className="section-subtitle-clean">Estimated soil moisture progression</p>
+                <h2 className="section-title-clean">{tx(l, 'reasons')}</h2>
+                <p className="section-subtitle-clean">
+                  {tx(l, 'confidence')}: {recommendation?.confidence ?? 'High'} · {tx(l, 'source')}: {recommendation?.provenance ?? 'Simulated'}
+                </p>
               </div>
-              <CloudRain size={20} color="#947333" />
-            </div>
+              <ChevronDown size={18} style={{ transform: showFactors ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </button>
 
-            {data.forecast?.length ? (
-              <div className="clean-list">
-                {data.forecast.map((point, i) => (
-                  <article className="forecast-timeline-row" key={`${point.hours}-${i}`}>
-                    <div className="timeline-hour">+{point.hours}h</div>
-                    <div className="timeline-meta">{point.provenance} · {tx(l, 'simulatedNotice')}</div>
-                    <div className="timeline-value">{point.moisturePercent}%</div>
-                  </article>
-                ))}
+            {showFactors && (
+              <div className="collapsible-panel">
+                {recommendation?.factors?.length ? (
+                  <div className="clean-list">
+                    {recommendation.factors
+                      .slice()
+                      .sort((a, b) => a.rank - b.rank)
+                      .map((factor, index) => (
+                        <article className="factor-row" key={`${factor.name}-${index}`}>
+                          <div className="factor-info">
+                            <span className="factor-rank">{factor.rank}</span>
+                            <div>
+                              <div className="factor-name">{factor.name}</div>
+                              <div className="factor-detail">{factor.detail}</div>
+                            </div>
+                          </div>
+                          <span className={`factor-badge ${effectClass(factor.effect)}`}>
+                            {effectText(factor.effect, l)}
+                          </span>
+                        </article>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="empty-state" style={{ padding: '16px 8px' }}>
+                    <Info size={20} />
+                    <p>{tx(l, 'noFactors')}</p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="empty-state">
-                <p>{tx(l, 'noForecast')}</p>
+            )}
+          </section>
+
+          {/* Collapsible 4: Forecast Model Status & Transparency */}
+          <section className="calm-card" data-testid="card-model-status">
+            <button
+              type="button"
+              className="collapsible-trigger"
+              onClick={() => setShowModelDetails(!showModelDetails)}
+              data-testid="button-toggle-model-details"
+            >
+              <div>
+                <h2 className="section-title-clean">{tx(l, 'modelStatus')}</h2>
+                <p className="section-subtitle-clean">Provenance and evaluation parameters</p>
+              </div>
+              <ChevronDown size={18} style={{ transform: showModelDetails ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </button>
+
+            {showModelDetails && (
+              <div className="collapsible-panel">
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
+                  {data.forecastLabel.includes('tree') || data.forecastLabel.includes('ML')
+                    ? tx(l, 'modelExperimentalNotice')
+                    : tx(l, 'modelFallbackNotice')}
+                </p>
+                <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-subtle)' }}>
+                  Active engine: <strong style={{ color: 'var(--text-main)' }}>{data.forecastLabel}</strong>
+                </div>
               </div>
             )}
           </section>
@@ -583,13 +790,12 @@ export function AnalyticsPage() {
 }
 
 // ==========================================
-// 3. HISTORY SCREEN (Clean Activity List)
+// 3. HISTORY SCREEN (Grouped & Paginated)
 // ==========================================
 const categories: { value: GetHistoryCategory; key: keyof typeof copy.en }[] = [
   { value: 'all', key: 'all' },
-  { value: 'reading', key: 'reading' },
-  { value: 'recommendation', key: 'recommendation' },
   { value: 'irrigation', key: 'irrigation' },
+  { value: 'recommendation', key: 'recommendation' },
   { value: 'alert', key: 'alert' },
   { value: 'feedback', key: 'feedbackEvents' },
 ];
@@ -606,8 +812,41 @@ export function HistoryPage() {
   const { lang } = useAquaWise();
   const l = lang as 'en' | 'te' | 'hi';
   const [category, setCategory] = useState<GetHistoryCategory>('all');
-  const params = category === 'all' ? undefined : { category };
+  const [displayCount, setDisplayCount] = useState(15);
+
+  const params = category === 'all' ? { limit: 150 } : { category, limit: 150 };
   const query = useGetHistory(params, { query: { queryKey: getGetHistoryQueryKey(params), refetchInterval: 60_000 } });
+
+  const rawEvents = query.data || [];
+  const visibleEvents = rawEvents.slice(0, displayCount);
+  const hasMore = rawEvents.length > displayCount;
+
+  // Group visible events by day
+  const todayStr = new Date().toDateString();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toDateString();
+
+  const groups: { label: string; dateStr: string; items: HistoryEvent[] }[] = [];
+  for (const item of visibleEvents) {
+    const d = new Date(item.at);
+    const dateStr = d.toDateString();
+    let label = '';
+    if (dateStr === todayStr) {
+      label = tx(l, 'today');
+    } else if (dateStr === yesterdayStr) {
+      label = tx(l, 'yesterday');
+    } else {
+      label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    let group = groups.find((g) => g.dateStr === dateStr);
+    if (!group) {
+      group = { label, dateStr, items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+  }
 
   return (
     <Page>
@@ -625,7 +864,10 @@ export function HistoryPage() {
             className={`filter-pill ${category === item.value ? 'active' : ''}`}
             role="tab"
             aria-selected={category === item.value}
-            onClick={() => setCategory(item.value)}
+            onClick={() => {
+              setCategory(item.value);
+              setDisplayCount(15);
+            }}
             data-testid={`filter-history-${item.value}`}
           >
             {tx(l, item.key)}
@@ -649,23 +891,45 @@ export function HistoryPage() {
 
       {query.data && (
         <section className="calm-card" style={{ marginTop: 16 }} data-testid="list-history">
-          {query.data.length ? (
-            <div className="clean-list">
-              {query.data.map((item: HistoryEvent) => (
-                <article className="activity-entry" key={item.id} data-testid={`event-row-${item.id}`}>
-                  <div className="activity-icon-container">
-                    <EventGlyph category={item.category} />
+          {groups.length ? (
+            <div>
+              {groups.map((group) => (
+                <div key={group.dateStr} className="history-day-group">
+                  <div className="history-day-header">
+                    <span className="history-day-title">{group.label}</span>
+                    <span className="history-day-count">{group.items.length} events</span>
                   </div>
-                  <div className="activity-body">
-                    <div className="activity-title">{item.title}</div>
-                    <div className="activity-detail">{item.detail}</div>
-                    <div className="activity-meta">
-                      {tx(l, 'eventSource')}: {item.source}
-                    </div>
+                  <div className="clean-list">
+                    {group.items.map((item: HistoryEvent) => (
+                      <article className="activity-entry" key={item.id} data-testid={`event-row-${item.id}`}>
+                        <div className="activity-icon-container">
+                          <EventGlyph category={item.category} />
+                        </div>
+                        <div className="activity-body">
+                          <div className="activity-title">{item.title}</div>
+                          <div className="activity-detail">{item.detail}</div>
+                          <div className="activity-meta">
+                            {tx(l, 'eventSource')}: {item.source}
+                          </div>
+                        </div>
+                        <time className="activity-timestamp">{fmtTime(item.at)}</time>
+                      </article>
+                    ))}
                   </div>
-                  <time className="activity-timestamp">{fmtTime(item.at)}</time>
-                </article>
+                </div>
               ))}
+
+              {hasMore && (
+                <div className="load-more-row">
+                  <button
+                    className="btn btn-outline btn-small"
+                    onClick={() => setDisplayCount((prev) => prev + 20)}
+                    data-testid="button-load-more"
+                  >
+                    <span>{tx(l, 'loadMore')}</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="empty-state">
@@ -681,23 +945,20 @@ export function HistoryPage() {
 }
 
 // ==========================================
-// 4. SETTINGS & FIELD SETUP
+// 4. SETTINGS & FIELD SETUP SCREEN
 // ==========================================
 export function SettingsPage() {
   const { lang, notify, stale: appStale } = useAquaWise();
   const l = lang as 'en' | 'te' | 'hi';
   const client = useQueryClient();
 
-  // Settings query & mutation
   const settingsQuery = useGetSettings({ query: { queryKey: getGetSettingsQueryKey(), refetchInterval: 60_000 } });
   const saveSettings = useUpdateSettings();
 
-  // Calibration query & mutation
   const calibQuery = useGetCalibration({ query: { queryKey: getGetCalibrationQueryKey(), refetchInterval: 60_000 } });
   const fieldQuery = useGetFieldState({ query: { queryKey: getGetFieldStateQueryKey(), refetchInterval: 30_000 } });
   const saveCalib = useUpdateCalibration();
 
-  // Test scenario mutations
   const scenario = useApplyTestScenario();
   const reset = useResetField();
 
@@ -717,13 +978,20 @@ export function SettingsPage() {
     }
   }, [calibQuery.data?.dryPoint, calibQuery.data?.wetPoint, dry, wet]);
 
-  // Local test scenario state
+  // Developer tools toggle
+  const [devToolsOpen, setDevToolsOpen] = useState(false);
   const [scenarioMoisture, setScenarioMoisture] = useState('24');
   const [scenarioRain, setScenarioRain] = useState('48');
+  const [showCustomCoords, setShowCustomCoords] = useState(false);
 
   const dryVal = Number(dry);
   const wetVal = Number(wet);
   const isCalibValid = dry !== '' && wet !== '' && dryVal >= 0 && wetVal <= 100 && dryVal < wetVal;
+
+  // Recalculated operating thresholds preview
+  const previewSpan = isCalibValid ? wetVal - dryVal : 50;
+  const previewLow = isCalibValid ? Math.round((dryVal + 0.25 * previewSpan) * 10) / 10 : 32.5;
+  const previewTarget = isCalibValid ? Math.round((dryVal + 0.70 * previewSpan) * 10) / 10 : 55.0;
 
   const updateSetting = <K extends keyof SettingsInput>(key: K, value: SettingsInput[K]) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -735,6 +1003,18 @@ export function SettingsPage() {
     else if (typeof form[key] === 'boolean') updateSetting(key, value as boolean as never);
     else if (key === 'quietHoursStart' || key === 'quietHoursEnd') updateSetting(key, value as never);
     else updateSetting(key, Number(value) as never);
+  };
+
+  const handlePresetSelect = (presetIndex: number) => {
+    if (presetIndex < 0) {
+      setShowCustomCoords(true);
+      return;
+    }
+    const preset = LOCATION_PRESETS[presetIndex];
+    if (preset) {
+      updateSetting('latitude', preset.lat);
+      updateSetting('longitude', preset.lon);
+    }
   };
 
   const handleSettingsSubmit = (e: FormEvent) => {
@@ -856,17 +1136,13 @@ export function SettingsPage() {
                     <option value="advisory">{tx(l, 'advisory')}</option>
                     <option value="auto">{tx(l, 'automatic')}</option>
                   </select>
+                  <span style={{ fontSize: 11, color: 'var(--text-subtle)' }}>
+                    {tx(l, 'controlHelp')}
+                  </span>
                 </div>
               </div>
-            </div>
 
-            <div className="section-separator" />
-
-            {/* Section 2: Irrigation & Quiet Hours */}
-            <div className="form-group-section">
-              <h2 className="group-heading">{tx(l, 'irrigationSection')}</h2>
-
-              <div className="toggle-item-row">
+              <div className="toggle-item-row" style={{ marginTop: 14 }}>
                 <div>
                   <div className="toggle-title">{tx(l, 'notifications')}</div>
                   <div className="toggle-sub">{tx(l, 'notificationsHelp')}</div>
@@ -880,8 +1156,44 @@ export function SettingsPage() {
                   data-testid="toggle-notifications"
                 />
               </div>
+            </div>
 
-              <div className="form-fields-grid" style={{ marginTop: 16 }}>
+            <div className="section-separator" />
+
+            {/* Section 2: Watering Rules */}
+            <div className="form-group-section">
+              <h2 className="group-heading">{tx(l, 'irrigationSection')}</h2>
+
+              <div className="form-fields-grid">
+                <div className="form-control">
+                  <label htmlFor="max-duration">{tx(l, 'maxDuration')} ({tx(l, 'min')})</label>
+                  <input
+                    id="max-duration"
+                    type="number"
+                    min="1"
+                    max="240"
+                    value={form.maxDurationMinutes}
+                    onChange={(e) => changeSetting('maxDurationMinutes', e.target.value)}
+                    data-testid="input-max-duration"
+                  />
+                </div>
+
+                <div className="form-control">
+                  <label htmlFor="flow-rate">{tx(l, 'flow')} ({tx(l, 'perMinute')})</label>
+                  <input
+                    id="flow-rate"
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    value={form.flowLitresPerMinute}
+                    onChange={(e) => changeSetting('flowLitresPerMinute', e.target.value)}
+                    data-testid="input-flow-rate"
+                  />
+                </div>
+              </div>
+
+              <div className="form-fields-grid" style={{ marginTop: 14 }}>
                 <div className="form-control">
                   <label htmlFor="quiet-start">{tx(l, 'quietHours')} · {tx(l, 'from')}</label>
                   <input
@@ -903,34 +1215,6 @@ export function SettingsPage() {
                   />
                 </div>
               </div>
-
-              <div className="form-fields-grid" style={{ marginTop: 16 }}>
-                <div className="form-control">
-                  <label htmlFor="max-duration">{tx(l, 'maxDuration')} ({tx(l, 'min')})</label>
-                  <input
-                    id="max-duration"
-                    type="number"
-                    min="1"
-                    max="240"
-                    value={form.maxDurationMinutes}
-                    onChange={(e) => changeSetting('maxDurationMinutes', e.target.value)}
-                    data-testid="input-max-duration"
-                  />
-                </div>
-                <div className="form-control">
-                  <label htmlFor="flow-rate">{tx(l, 'flow')} ({tx(l, 'perMinute')})</label>
-                  <input
-                    id="flow-rate"
-                    type="number"
-                    min="0.1"
-                    max="100"
-                    step="0.1"
-                    value={form.flowLitresPerMinute}
-                    onChange={(e) => changeSetting('flowLitresPerMinute', e.target.value)}
-                    data-testid="input-flow-rate"
-                  />
-                </div>
-              </div>
             </div>
 
             <div className="section-separator" />
@@ -938,34 +1222,65 @@ export function SettingsPage() {
             {/* Section 3: Field Location */}
             <div className="form-group-section">
               <h2 className="group-heading">{tx(l, 'location')}</h2>
-              <div className="form-fields-grid">
-                <div className="form-control">
-                  <label htmlFor="latitude">{tx(l, 'latitude')}</label>
-                  <input
-                    id="latitude"
-                    type="number"
-                    min="-90"
-                    max="90"
-                    step="0.0001"
-                    value={form.latitude}
-                    onChange={(e) => changeSetting('latitude', e.target.value)}
-                    data-testid="input-latitude"
-                  />
-                </div>
-                <div className="form-control">
-                  <label htmlFor="longitude">{tx(l, 'longitude')}</label>
-                  <input
-                    id="longitude"
-                    type="number"
-                    min="-180"
-                    max="180"
-                    step="0.0001"
-                    value={form.longitude}
-                    onChange={(e) => changeSetting('longitude', e.target.value)}
-                    data-testid="input-longitude"
-                  />
-                </div>
+
+              <div className="form-control" style={{ marginBottom: 12 }}>
+                <label htmlFor="location-preset">{tx(l, 'locationPreset')}</label>
+                <select
+                  id="location-preset"
+                  onChange={(e) => handlePresetSelect(Number(e.target.value))}
+                  defaultValue="0"
+                  data-testid="select-location-preset"
+                >
+                  {LOCATION_PRESETS.map((p, idx) => (
+                    <option key={p.label} value={idx}>{p.label}</option>
+                  ))}
+                  <option value="-1">{tx(l, 'customCoordinates')}</option>
+                </select>
               </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setShowCustomCoords(!showCustomCoords)}
+                >
+                  {showCustomCoords ? 'Hide coordinate values' : 'View / edit coordinates'}
+                </button>
+                <span className="subtle">
+                  ({form.latitude.toFixed(4)}, {form.longitude.toFixed(4)})
+                </span>
+              </div>
+
+              {showCustomCoords && (
+                <div className="form-fields-grid">
+                  <div className="form-control">
+                    <label htmlFor="latitude">{tx(l, 'latitude')}</label>
+                    <input
+                      id="latitude"
+                      type="number"
+                      min="-90"
+                      max="90"
+                      step="0.0001"
+                      value={form.latitude}
+                      onChange={(e) => changeSetting('latitude', e.target.value)}
+                      data-testid="input-latitude"
+                    />
+                  </div>
+                  <div className="form-control">
+                    <label htmlFor="longitude">{tx(l, 'longitude')}</label>
+                    <input
+                      id="longitude"
+                      type="number"
+                      min="-180"
+                      max="180"
+                      step="0.0001"
+                      value={form.longitude}
+                      onChange={(e) => changeSetting('longitude', e.target.value)}
+                      data-testid="input-longitude"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={{ marginTop: 24 }}>
@@ -1056,7 +1371,7 @@ export function SettingsPage() {
                 </div>
               )}
 
-              {/* Calibration Slider Track */}
+              {/* Calibration Range Slider Track */}
               <div className="calibration-track" aria-label={`Dry ${dry}%, Wet ${wet}%`}>
                 <span className="calibration-pin" style={{ left: `${Math.max(0, Math.min(100, dryVal))}%` }} />
                 <span className="calibration-pin wet-pin" style={{ left: `${Math.max(0, Math.min(100, wetVal))}%` }} />
@@ -1066,12 +1381,10 @@ export function SettingsPage() {
                 <span>{tx(l, 'wet')} · {wet || '—'}%</span>
               </div>
 
-              {calibQuery.data && (
-                <div className="calibration-summary-chips">
-                  <span className="summary-chip">{tx(l, 'lowThreshold')}: {calibQuery.data.lowThreshold}%</span>
-                  <span className="summary-chip">{tx(l, 'targetMoisture')}: {calibQuery.data.targetMoisture}%</span>
-                </div>
-              )}
+              <div className="calibration-summary-chips">
+                <span className="summary-chip">{tx(l, 'lowThreshold')}: {previewLow}%</span>
+                <span className="summary-chip">{tx(l, 'targetMoisture')}: {previewTarget}%</span>
+              </div>
 
               <div style={{ marginTop: 20 }}>
                 <button
@@ -1087,95 +1400,109 @@ export function SettingsPage() {
             </form>
           </div>
 
-          {/* Section 5: Simulation & Testing */}
-          <div className="calm-card">
-            <div className="section-header">
-              <div>
-                <h2 className="section-title-clean">{tx(l, 'testingSection')}</h2>
-                <p className="section-subtitle-clean">{tx(l, 'testSub')}</p>
-              </div>
-              <Sprout size={20} color="#1b4332" />
-            </div>
+          {/* Section 5: Developer Tools & Simulation (Collapsible / Advanced) */}
+          <div className="calm-card" data-testid="section-dev-tools">
+            <button
+              type="button"
+              className="dev-tools-toggle-btn"
+              onClick={() => setDevToolsOpen(!devToolsOpen)}
+              data-testid="button-toggle-dev-tools"
+            >
+              <Sprout size={16} />
+              <span>{devToolsOpen ? tx(l, 'hideDevTools') : tx(l, 'showDevTools')}</span>
+              <ChevronDown size={16} style={{ transform: devToolsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </button>
 
-            <div className="toggle-item-row" style={{ paddingBottom: 16 }}>
-              <div>
-                <div className="toggle-title">{tx(l, 'testMode')}</div>
-                <div className="toggle-sub">{tx(l, 'testHelp')}</div>
-              </div>
-              <input
-                aria-label={tx(l, 'testMode')}
-                className="switch"
-                type="checkbox"
-                checked={form.testMode}
-                onChange={(e) => changeSetting('testMode', e.target.checked)}
-                data-testid="toggle-test-mode"
-              />
-            </div>
+            {devToolsOpen && (
+              <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid var(--border-soft)' }}>
+                <div className="section-header" style={{ marginBottom: 14 }}>
+                  <div>
+                    <h2 className="section-title-clean">{tx(l, 'devToolsTitle')}</h2>
+                    <p className="section-subtitle-clean">{tx(l, 'devToolsSubtitle')}</p>
+                  </div>
+                </div>
 
-            <div className="form-fields-grid" style={{ marginTop: 12 }}>
-              <div className="form-control">
-                <label htmlFor="scenario-moisture">{tx(l, 'moisture')} (%)</label>
-                <input
-                  id="scenario-moisture"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="any"
-                  value={scenarioMoisture}
-                  onChange={(e) => setScenarioMoisture(e.target.value)}
-                  data-testid="input-scenario-moisture"
-                />
-              </div>
-              <div className="form-control">
-                <label htmlFor="scenario-rain">{tx(l, 'rainChance')} (%)</label>
-                <input
-                  id="scenario-rain"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="any"
-                  value={scenarioRain}
-                  onChange={(e) => setScenarioRain(e.target.value)}
-                  data-testid="input-scenario-rain"
-                />
-              </div>
-            </div>
+                <div className="toggle-item-row" style={{ paddingBottom: 16 }}>
+                  <div>
+                    <div className="toggle-title">{tx(l, 'testMode')}</div>
+                    <div className="toggle-sub">{tx(l, 'testHelp')}</div>
+                  </div>
+                  <input
+                    aria-label={tx(l, 'testMode')}
+                    className="switch"
+                    type="checkbox"
+                    checked={form.testMode}
+                    onChange={(e) => changeSetting('testMode', e.target.checked)}
+                    data-testid="toggle-test-mode"
+                  />
+                </div>
 
-            <div className="test-actions-grid" style={{ marginTop: 16 }}>
-              <button
-                className="btn btn-outline btn-small"
-                disabled={scenario.isPending || !form.testMode}
-                onClick={() => applyScenario('dry')}
-                data-testid="button-test-dry"
-              >
-                {tx(l, 'dryScenario')}
-              </button>
-              <button
-                className="btn btn-outline btn-small"
-                disabled={scenario.isPending || !form.testMode}
-                onClick={() => applyScenario('rain')}
-                data-testid="button-test-rain"
-              >
-                {tx(l, 'rainScenario')}
-              </button>
-              <button
-                className="btn btn-outline btn-small"
-                disabled={scenario.isPending || !form.testMode}
-                onClick={() => applyScenario('fault')}
-                data-testid="button-test-fault"
-              >
-                {tx(l, 'faultScenario')}
-              </button>
-              <button
-                className="btn btn-danger btn-small"
-                disabled={reset.isPending}
-                onClick={resetAll}
-                data-testid="button-reset-field"
-              >
-                <RotateCcw size={14} />
-                <span>{tx(l, 'reset')}</span>
-              </button>
-            </div>
+                <div className="form-fields-grid" style={{ marginTop: 12 }}>
+                  <div className="form-control">
+                    <label htmlFor="scenario-moisture">{tx(l, 'moisture')} (%)</label>
+                    <input
+                      id="scenario-moisture"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="any"
+                      value={scenarioMoisture}
+                      onChange={(e) => setScenarioMoisture(e.target.value)}
+                      data-testid="input-scenario-moisture"
+                    />
+                  </div>
+                  <div className="form-control">
+                    <label htmlFor="scenario-rain">{tx(l, 'rainChance')} (%)</label>
+                    <input
+                      id="scenario-rain"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="any"
+                      value={scenarioRain}
+                      onChange={(e) => setScenarioRain(e.target.value)}
+                      data-testid="input-scenario-rain"
+                    />
+                  </div>
+                </div>
+
+                <div className="test-actions-grid" style={{ marginTop: 16 }}>
+                  <button
+                    className="btn btn-outline btn-small"
+                    disabled={scenario.isPending || !form.testMode}
+                    onClick={() => applyScenario('dry')}
+                    data-testid="button-test-dry"
+                  >
+                    {tx(l, 'dryScenario')}
+                  </button>
+                  <button
+                    className="btn btn-outline btn-small"
+                    disabled={scenario.isPending || !form.testMode}
+                    onClick={() => applyScenario('rain')}
+                    data-testid="button-test-rain"
+                  >
+                    {tx(l, 'rainScenario')}
+                  </button>
+                  <button
+                    className="btn btn-outline btn-small"
+                    disabled={scenario.isPending || !form.testMode}
+                    onClick={() => applyScenario('fault')}
+                    data-testid="button-test-fault"
+                  >
+                    {tx(l, 'faultScenario')}
+                  </button>
+                  <button
+                    className="btn btn-danger btn-small"
+                    disabled={reset.isPending}
+                    onClick={resetAll}
+                    data-testid="button-reset-field"
+                  >
+                    <RotateCcw size={14} />
+                    <span>{tx(l, 'reset')}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1202,7 +1529,7 @@ export function CalibrationPage() {
       setDry(String(query.data.dryPoint));
       setWet(String(query.data.wetPoint));
     }
-  }, [query.data?.dryPoint, query.data?.wetPoint, dry, wet]);
+  }, [query.data, dry, wet]);
 
   const dryVal = Number(dry);
   const wetVal = Number(wet);
@@ -1217,12 +1544,11 @@ export function CalibrationPage() {
     (point === 'dry' ? setDry : setWet)(String(moisture));
   };
 
-  const submit = (e: FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    const payload: CalibrationInput = { dryPoint: dryVal, wetPoint: wetVal };
     update.mutate(
-      { data: payload },
+      { data: { dryPoint: dryVal, wetPoint: wetVal } },
       {
         onSuccess: () => {
           void client.invalidateQueries({ queryKey: getGetCalibrationQueryKey() });
@@ -1236,25 +1562,17 @@ export function CalibrationPage() {
 
   return (
     <Page>
-      <PageHeading
-        eyebrow={tx(l, 'calibrateTitle')}
-        title={tx(l, 'calibrateTitle')}
-        subtitle={tx(l, 'calibrateSub')}
-      />
-
+      <PageHeading eyebrow={tx(l, 'calibration')} title={tx(l, 'calibrateTitle')} subtitle={tx(l, 'calibrateSub')} />
       {query.isLoading && <LoadingCard text={tx(l, 'loading')} />}
-      {query.isError && (
-        <ErrorBanner text={`${tx(l, 'error')} ${errText(query.error)}`} retry={() => void query.refetch()} />
-      )}
-
+      {query.isError && <ErrorBanner text={`${tx(l, 'error')} ${errText(query.error)}`} retry={() => void query.refetch()} />}
       {query.data && (
-        <div className="calm-card" style={{ maxWidth: 640 }}>
-          <form onSubmit={submit} data-testid="form-calibration">
+        <div className="calm-card">
+          <form onSubmit={handleSubmit} data-testid="form-calibration-direct">
             <div className="form-fields-grid">
               <div className="form-control">
-                <label htmlFor="dry-point">{tx(l, 'dry')} (%)</label>
+                <label htmlFor="calib-dry">{tx(l, 'dry')} (%)</label>
                 <input
-                  id="dry-point"
+                  id="calib-dry"
                   type="number"
                   min="0"
                   max="100"
@@ -1262,13 +1580,12 @@ export function CalibrationPage() {
                   value={dry}
                   onChange={(e) => setDry(e.target.value)}
                   required
-                  data-testid="input-dry-point"
                 />
               </div>
               <div className="form-control">
-                <label htmlFor="wet-point">{tx(l, 'wet')} (%)</label>
+                <label htmlFor="calib-wet">{tx(l, 'wet')} (%)</label>
                 <input
-                  id="wet-point"
+                  id="calib-wet"
                   type="number"
                   min="0"
                   max="100"
@@ -1276,32 +1593,17 @@ export function CalibrationPage() {
                   value={wet}
                   onChange={(e) => setWet(e.target.value)}
                   required
-                  data-testid="input-wet-point"
                 />
               </div>
             </div>
 
             <div className="capture-controls-row">
-              <span className="subtle">
-                {tx(l, 'currentReading')}: {field.data?.telemetry.soilMoisture ?? '—'}%
-              </span>
+              <span className="subtle">{tx(l, 'currentReading')}: {field.data?.telemetry.soilMoisture ?? '—'}%</span>
               <div className="capture-buttons-group">
-                <button
-                  type="button"
-                  className="btn btn-outline btn-small"
-                  onClick={() => captureCurrent('dry')}
-                  disabled={appStale || field.data?.telemetry.soilMoisture == null}
-                  data-testid="button-capture-dry"
-                >
+                <button type="button" className="btn btn-outline btn-small" onClick={() => captureCurrent('dry')} disabled={appStale}>
                   {tx(l, 'dryCapture')}
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-small"
-                  onClick={() => captureCurrent('wet')}
-                  disabled={appStale || field.data?.telemetry.soilMoisture == null}
-                  data-testid="button-capture-wet"
-                >
+                <button type="button" className="btn btn-outline btn-small" onClick={() => captureCurrent('wet')} disabled={appStale}>
                   {tx(l, 'wetCapture')}
                 </button>
               </div>
@@ -1314,7 +1616,7 @@ export function CalibrationPage() {
               </div>
             )}
 
-            <div className="calibration-track" aria-label={`Dry ${dry}%, Wet ${wet}%`}>
+            <div className="calibration-track">
               <span className="calibration-pin" style={{ left: `${Math.max(0, Math.min(100, dryVal))}%` }} />
               <span className="calibration-pin wet-pin" style={{ left: `${Math.max(0, Math.min(100, wetVal))}%` }} />
             </div>
@@ -1329,12 +1631,7 @@ export function CalibrationPage() {
             </div>
 
             <div style={{ marginTop: 24 }}>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!valid || update.isPending}
-                data-testid="button-save-calibration"
-              >
+              <button type="submit" className="btn btn-primary" disabled={!valid || update.isPending}>
                 {update.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />}
                 <span>{update.isPending ? tx(l, 'calibrating') : tx(l, 'saveCalibration')}</span>
               </button>

@@ -103,6 +103,39 @@ def test_auto_session_stops_when_calibrated_target_is_reached(client):
     assert stopped["irrigation"]["active"] is False
 
 
+def test_auto_session_manual_stop_respects_override_and_does_not_immediately_restart(client):
+    client.put(
+        "/api/settings",
+        json=settings_payload(client, controlMode="auto"),
+    )
+    started = client.post(
+        "/api/test-scenario",
+        json={
+            "soilMoisture": 10,
+            "rainingNow": False,
+            "rainProbability6h": 0,
+            "precipitationMm6h": 0,
+            "sensorFault": False,
+        },
+    ).json()
+    assert started["irrigation"]["active"] is True
+    assert started["irrigation"]["source"] == "automatic"
+
+    # Farmer manually clicks "Stop Watering"
+    stopped = client.post("/api/irrigation/stop").json()
+    assert stopped["active"] is False
+
+    # Immediate subsequent check of field state must NOT auto-restart
+    field = client.get("/api/field").json()
+    assert field["irrigation"]["active"] is False
+
+    # Manual start clears the override
+    manual_started = client.post("/api/irrigation/start", json={"durationMinutes": 10}).json()
+    assert manual_started["active"] is True
+    assert manual_started["source"] == "manual"
+
+
+
 def test_sensor_fault_uses_recent_estimate_and_missing_history_checks_field(client):
     first = client.get("/api/field").json()
     assert first["telemetry"]["soilMoisture"] is not None

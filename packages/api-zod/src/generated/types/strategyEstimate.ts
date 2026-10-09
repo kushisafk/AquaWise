@@ -12,4 +12,10 @@ export interface StrategyEstimate {
   dryStressHours: number;
   overwateringHours: number;
   waterSavedPercent: number;
+  description?: string;
+  savingsType?: string;
+  isBaseline?: boolean;
+  isRecommended?: boolean;
+  assumedFlowRateLpm?: number;
+  isFlowRateConfigured?: boolean;
 }

@@ -8,7 +8,7 @@ import math
 import os
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
@@ -29,12 +29,34 @@ DB_PATH = Path(os.environ.get(
 ))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 DB_LOCK = threading.RLock()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _init_db()
+    with DB_LOCK, connect_db() as db:
+        _cleanup_duplicate_history(db)
+        try:
+            info = forecast_points(34, 27, 58, 65, 0, 0)
+            exists = db.execute("SELECT 1 FROM history WHERE title = 'Forecast model ready'").fetchone()
+            if not exists:
+                add_history(
+                    db, "alert", "Forecast model ready",
+                    f"{info[1]} based on synthetic data and transparent simulator assumptions.",
+                    "system",
+                )
+        except Exception:
+            pass
+    yield
+
+
 app = FastAPI(
     title="AquaWise API",
     description="Software-only irrigation decision support. Field readings and irrigation are simulated.",
     version="1.0.0",
     openapi_url="/api/openapi.json",
     docs_url="/api/docs",
+    lifespan=lifespan,
 )
 
 DEFAULT_SETTINGS = {
@@ -243,6 +265,19 @@ def read_calibration(db: sqlite3.Connection) -> dict:
         "lowThreshold": low,
         "targetMoisture": target,
     }
+
+
+def _cleanup_duplicate_history(db: sqlite3.Connection) -> None:
+    """Safely deduplicate routine simulated readings while preserving real events."""
+    db.execute("""
+        DELETE FROM history
+        WHERE category = 'reading'
+        AND id NOT IN (
+            SELECT MIN(id) FROM history
+            WHERE category = 'reading'
+            GROUP BY strftime('%Y-%m-%d %H', created_at)
+        )
+    """)
 
 
 def add_history(
@@ -484,6 +519,7 @@ def _field_state(db: sqlite3.Connection) -> dict:
             stop_reason = "Target moisture reached"
         elif end and current >= end:
             stop_reason = "Maximum watering duration reached"
+            set_value(db, "auto_override_until", iso(current + timedelta(hours=1)))
         if stop_reason:
             _stop_session(db, active, stop_reason)
             active = None
@@ -538,21 +574,22 @@ def _field_state(db: sqlite3.Connection) -> dict:
                 sunlight, int(weather["rainingNow"]), int(fault), provenance, iso(current),
             ),
         )
-        add_history(
-            db, "reading", "Simulated field reading",
-            f"Soil moisture {measured_moisture if measured_moisture is not None else 'unavailable'}%; "
-            f"temperature {weather['temperatureC']:.1f}°C; humidity {weather['humidityPercent']:.0f}%.",
-            provenance,
-        )
+        last_reading = db.execute(
+            "SELECT created_at FROM history WHERE category = 'reading' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        last_reading_at = parse_time(last_reading["created_at"]) if last_reading else None
+        if not last_reading_at or current - last_reading_at >= timedelta(hours=6):
+            add_history(
+                db, "reading", "Simulated field reading",
+                f"Soil moisture {measured_moisture if measured_moisture is not None else 'unavailable'}%; "
+                f"temperature {weather['temperatureC']:.1f}°C; humidity {weather['humidityPercent']:.0f}%.",
+                provenance,
+            )
     last_decision = db.execute(
         "SELECT title, detail, created_at FROM history WHERE category = 'recommendation' "
         "ORDER BY id DESC LIMIT 1"
     ).fetchone()
-    if (
-        not last_decision
-        or last_decision["title"] != recommendation["status"]
-        or (current - (parse_time(last_decision["created_at"]) or current)) > timedelta(minutes=30)
-    ):
+    if not last_decision or last_decision["title"] != recommendation["status"]:
         add_history(
             db, "recommendation", recommendation["status"], recommendation["reason"],
             recommendation["provenance"],
@@ -565,8 +602,11 @@ def _field_state(db: sqlite3.Connection) -> dict:
         add_notification(db, "Simulated sensor fault", "Check the field reading; any displayed estimate is labelled.")
 
     # Automatic control remains software-only and obeys the same max-duration limit.
+    override_until = parse_time(get_value(db, "auto_override_until"))
+    auto_overridden = bool(override_until and current < override_until)
     if (
         settings["controlMode"] == "auto"
+        and not auto_overridden
         and not session["active"]
         and recommendation["status"] == "WATER NOW"
         and recommendation["confidence"] in ("High", "Medium")
@@ -607,6 +647,8 @@ def _start_session(db: sqlite3.Connection, duration: int, source: str) -> dict:
         "VALUES (1, ?, ?, ?, ?)",
         (source, iso(start), iso(end), duration),
     )
+    if source == "manual":
+        set_value(db, "auto_override_until", None)
     add_history(
         db, "irrigation", "Simulated watering started",
         f"{source.title()} simulated session for {duration} minutes. No physical equipment is connected.",
@@ -614,22 +656,6 @@ def _start_session(db: sqlite3.Connection, duration: int, source: str) -> dict:
     )
     add_notification(db, "Simulated watering started", f"{duration} minute {source} session.")
     return session_dict(db)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    _init_db()
-    try:
-        info = forecast_points(34, 27, 58, 65, 0, 0)
-        with connect_db() as db:
-            add_history(
-                db, "alert", "Forecast model ready",
-                f"{info[1]} based on synthetic data and transparent simulator assumptions.",
-                "system",
-            )
-    except Exception:
-        # The rule engine and simulator remain available if optional ML is unavailable.
-        pass
 
 
 @app.get(f"{API_PREFIX}/healthz")
@@ -712,23 +738,27 @@ def get_analytics():
 
 
 @app.get(f"{API_PREFIX}/history")
-def get_history(category: str = Query("all")):
+def get_history(
+    category: str = Query("all"),
+    limit: int = Query(50, ge=1, le=250),
+    offset: int = Query(0, ge=0),
+):
     allowed = {"all", "reading", "recommendation", "irrigation", "alert", "feedback"}
     if category not in allowed:
         raise HTTPException(status_code=422, detail="Choose a supported history filter.")
     with connect_db() as db:
-        rows = (
-            db.execute(
+        if category != "all":
+            rows = db.execute(
                 "SELECT id, category, title, detail, source, created_at FROM history "
-                "WHERE category = ? ORDER BY id DESC LIMIT 250",
-                (category,),
+                "WHERE category = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (category, limit, offset),
             ).fetchall()
-            if category != "all"
-            else db.execute(
+        else:
+            rows = db.execute(
                 "SELECT id, category, title, detail, source, created_at FROM history "
-                "ORDER BY id DESC LIMIT 250"
+                "ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
             ).fetchall()
-        )
         return [{
             "id": int(row["id"]),
             "category": row["category"],
@@ -752,6 +782,8 @@ def update_settings(payload: SettingsInput):
         incoming = payload.model_dump()
         for key, value in incoming.items():
             set_value(db, f"setting:{key}", value)
+        if incoming.get("controlMode") == "auto":
+            set_value(db, "auto_override_until", None)
         if previous["testMode"] and not incoming["testMode"]:
             set_value(db, "test_scenario", None)
         add_history(db, "alert", "Settings updated", "Saved field and notification preferences.")
@@ -797,6 +829,8 @@ def stop_irrigation():
         ).fetchone()
         if row:
             _stop_session(db, row, "Stopped manually")
+        # Enforce manual override cooldown so automatic mode respects farmer's manual stop
+        set_value(db, "auto_override_until", iso(now_utc() + timedelta(hours=2)))
         return session_dict(db)
 
 
@@ -805,6 +839,7 @@ def apply_test_scenario(payload: TestScenarioInput):
     with DB_LOCK, connect_db() as db:
         set_value(db, "setting:testMode", True)
         set_value(db, "test_scenario", payload.model_dump())
+        set_value(db, "auto_override_until", None)
         simulation = get_value(db, "simulation", DEFAULT_SIMULATION.copy())
         if payload.soilMoisture is not None:
             simulation["moisture"] = payload.soilMoisture
@@ -833,6 +868,7 @@ def reset_field():
         set_value(db, "simulation", {**DEFAULT_SIMULATION, "lastUpdated": iso()})
         set_value(db, "test_scenario", None)
         set_value(db, "setting:testMode", False)
+        set_value(db, "auto_override_until", None)
         add_history(
             db, "alert", "Simulated field reset",
             "Field moisture, test overrides and calibration returned to defaults.",

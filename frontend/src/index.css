@@ -74,6 +74,34 @@ button, a {
 }
 
 /* ============================================================
+   ELEGANT CUSTOM SCROLLBAR
+   ============================================================ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(27, 67, 50, 0.18);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(27, 67, 50, 0.38);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(27, 67, 50, 0.22) transparent;
+}
+
+/* ============================================================
    SHELL LAYOUT: SIDEBAR (DESKTOP) + TOPBAR + MAIN
    ============================================================ */
 
@@ -224,26 +252,23 @@ button, a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 11px;
-  border-radius: var(--radius-full);
-  background: var(--bg-surface-subtle);
+  padding: 4px 6px;
+  background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  border: 1px solid var(--border-soft);
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
 }
 
 .connection-chip .dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #3c9159;
 }
 
 .connection-chip.offline {
-  background: var(--tone-warning-bg);
   color: var(--tone-warning-text);
-  border-color: var(--tone-warning-border);
 }
 
 .connection-chip.offline .dot {
@@ -363,77 +388,32 @@ button, a {
 .calm-hero {
   background: var(--bg-surface);
   border: 1px solid var(--border-soft);
+  border-left: 5px solid var(--color-primary);
   border-radius: var(--radius-lg);
-  padding: clamp(32px, 5vw, 48px) clamp(24px, 4vw, 40px);
+  padding: clamp(32px, 5vw, 44px) clamp(24px, 4vw, 40px);
   box-shadow: var(--shadow-card);
   margin-bottom: 24px;
   display: flex;
   flex-direction: column;
   position: relative;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, border-left-color 0.2s ease;
 }
 
-.hero-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  width: fit-content;
-  padding: 5px 12px;
-  border-radius: var(--radius-full);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  margin-bottom: 18px;
+/* Tones for Recommendation (Clean Left-Accent, No Floating Pills) */
+.tone-water-now {
+  border-left-color: #d97706;
 }
 
-.status-indicator-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+.tone-wait {
+  border-left-color: #10b981;
 }
 
-/* Tones for Recommendation */
-.tone-water-now .hero-status-pill {
-  background: var(--tone-urgent-bg);
-  color: var(--tone-urgent-text);
-  border: 1px solid var(--tone-urgent-border);
-}
-.tone-water-now .status-indicator-dot {
-  background: #bf731e;
+.tone-check-field {
+  border-left-color: #ea580c;
 }
 
-.tone-wait .hero-status-pill {
-  background: var(--tone-calm-bg);
-  color: var(--tone-calm-text);
-  border: 1px solid var(--tone-calm-border);
-}
-.tone-wait .status-indicator-dot {
-  background: #3c9159;
-}
-
-.tone-check-field .hero-status-pill {
-  background: var(--tone-warning-bg);
-  color: var(--tone-warning-text);
-  border: 1px solid var(--tone-warning-border);
-}
-.tone-check-field .status-indicator-dot {
-  background: #d4682c;
-}
-
-.tone-watering .hero-status-pill {
-  background: #e8f4ed;
-  color: #1a4d33;
-  border: 1px solid #c2e2ce;
-}
-.tone-watering .status-indicator-dot {
-  background: #1a4d33;
-  animation: pulse-dot 1.5s infinite ease-in-out;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.8); }
+.tone-watering {
+  border-left-color: #059669;
 }
 
 .hero-dominant-title {
@@ -663,10 +643,10 @@ button, a {
   color: var(--text-muted);
 }
 
-.feedback-pill-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-full);
+.feedback-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
   background: var(--bg-surface);
   border: 1px solid var(--border-soft);
   color: var(--text-muted);
@@ -676,9 +656,10 @@ button, a {
   transition: all 0.16s ease;
 }
 
-.feedback-pill-btn:hover:not(:disabled) {
+.feedback-btn:hover:not(:disabled) {
   border-color: var(--border-muted);
-  color: var(--text-main);
+  color: var(--color-primary);
+  background: var(--bg-surface-subtle);
 }
 
 /* ============================================================
@@ -1271,6 +1252,130 @@ button, a {
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.notification-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3c9159;
+}
+
+/* History Day Grouping */
+.history-day-group {
+  margin-bottom: 22px;
+}
+.history-day-group:last-child {
+  margin-bottom: 0;
+}
+.history-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 2px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 10px;
+}
+.history-day-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.2px;
+}
+.history-day-count {
+  font-size: 11px;
+  color: var(--text-subtle);
+}
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0 8px;
+}
+
+/* Progressive Disclosure / Collapsible */
+.collapsible-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.collapsible-trigger:hover .section-title-clean {
+  color: var(--color-primary);
+}
+.collapsible-panel {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+  animation: panel-reveal 0.18s ease-out;
+}
+@keyframes panel-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Strategy Badges & Calculations */
+.strategy-badge-recommended {
+  background: #e8f4ec;
+  color: #1b4332;
+  border: 1px solid #c2e2ce;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.badge-savings-positive {
+  color: #2b6d41;
+  font-weight: 700;
+}
+.badge-savings-negative {
+  color: #9c651e;
+  font-weight: 700;
+}
+.badge-savings-neutral {
+  color: var(--text-muted);
+}
+.strategy-assumptions-box {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-subtle);
+  border: 1px solid var(--border-soft);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.dev-tools-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-muted);
+  padding: 12px 18px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: all 0.16s ease;
+}
+.dev-tools-toggle-btn:hover {
+  background: var(--bg-surface-subtle);
+  color: var(--text-main);
+  border-color: var(--color-primary);
 }
 
 /* ============================================================

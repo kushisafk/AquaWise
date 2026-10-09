@@ -100,6 +100,19 @@ paths:
           schema:
             type: string
             enum: [all, reading, recommendation, irrigation, alert, feedback]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 250
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
       responses:
         "200":
           description: Chronological history
@@ -377,6 +390,12 @@ components:
         dryStressHours: { type: number }
         overwateringHours: { type: number }
         waterSavedPercent: { type: number }
+        description: { type: string }
+        savingsType: { type: string }
+        isBaseline: { type: boolean }
+        isRecommended: { type: boolean }
+        assumedFlowRateLpm: { type: number }
+        isFlowRateConfigured: { type: boolean }
       required: [name, waterLitres, dryStressHours, overwateringHours, waterSavedPercent]
     Analytics:
       type: object

@@ -9,4 +9,13 @@ import type { GetHistoryCategory } from './getHistoryCategory';
 
 export type GetHistoryParams = {
 category?: GetHistoryCategory;
+/**
+ * @minimum 1
+ * @maximum 250
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };
