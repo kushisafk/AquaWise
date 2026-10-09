@@ -63,29 +63,30 @@ For full architectural details, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ```
 AquaWise/
-├── artifacts/
-│   ├── api-server/         # FastAPI backend service
-│   │   ├── main.py         # REST endpoints, SSE stream, SQLite storage, simulation tick
-│   │   ├── engine.py       # Deterministic decision rules & multilingual reasons
-│   │   ├── forecasting.py  # ML regressor, water-balance simulation, schedule comparison
-│   │   └── tests/          # Pytest suite for API endpoints and decision engine
-│   ├── aquawise/           # React 19 + Vite + Tailwind CSS PWA frontend
-│   │   ├── src/            # UI components, pages (Home, Why, Calibration, Settings)
-│   │   ├── locales/        # English (en), Telugu (te), Hindi (hi) dictionaries
-│   │   └── public/         # PWA Web Manifest, icons, and offline Service Worker
-│   └── mockup-sandbox/     # Component design and prototyping sandbox
-├── docs/
-│   ├── PRD.md              # Full Product Requirements Document (IARE HackVerse)
-│   ├── ARCHITECTURE.md     # In-depth system architecture & engine layer breakdown
-│   └── HARDWARE_GUIDE.md   # Bill of Materials, ESP32 pinouts, and MQTT JSON contract
-├── lib/
-│   ├── api-spec/           # OpenAPI 3.0 specification contract (openapi.yaml)
-│   ├── api-client-react/   # Generated React Query hooks (via Orval)
+├── frontend/               # React 19 + TypeScript + Vite + Tailwind CSS PWA
+│   ├── public/             # PWA Web Manifest, icons (192/512), service worker
+│   ├── src/
+│   │   ├── components/     # UI design system components
+│   │   ├── locales/        # Multilingual: English (en), Telugu (te), Hindi (hi)
+│   │   └── pages/          # Home, Why, Calibration, Settings, History
+│   └── vite.config.ts      # Vite config with PWA support & /api backend proxy
+├── backend/                # FastAPI backend & decision engine
+│   ├── main.py             # REST API, SSE stream (/api/events), SQLite persistence
+│   ├── engine.py           # Deterministic decision rules & multilingual reasons
+│   ├── forecasting.py      # ML regressor, soil water balance, schedule optimizer
+│   └── tests/              # Pytest suite for API endpoints & decision engine
+├── packages/               # Shared API contracts & generated clients
+│   ├── api-spec/           # OpenAPI 3.0 specification (openapi.yaml) & Orval config
+│   ├── api-client-react/   # Generated React Query hooks
 │   └── api-zod/            # Generated Zod validation schemas
+├── docs/                   # Project documentation
+│   ├── PRD.md              # Complete Product Requirements Document (IARE HackVerse)
+│   ├── ARCHITECTURE.md     # Multi-layer decision engine & system architecture
+│   └── HARDWARE_GUIDE.md   # Bill of Materials, ESP32 pinouts, MQTT JSON contract
 ├── main.py                 # Root launcher script for the FastAPI backend
-├── package.json            # Workspace npm scripts
+├── package.json            # Workspace npm scripts & package definitions
 ├── pnpm-workspace.yaml     # pnpm workspace configuration
-└── pyproject.toml          # Python package requirements and pytest configuration
+└── pyproject.toml          # Python package requirements & pytest configuration
 ```
 
 ---
@@ -122,7 +123,7 @@ npx pnpm dev:web
 
 ### 4. Run the Automated Tests
 ```bash
-python -m pytest artifacts/api-server/tests
+python -m pytest backend/tests
 ```
 
 ---

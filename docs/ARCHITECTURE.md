@@ -52,7 +52,7 @@ AquaWise spans three interconnected tiers:
 
 ## 2. Decision Engine Layers
 
-The backend decision engine (`artifacts/api-server/engine.py` and `forecasting.py`) evaluates live data using a three-tiered hierarchy:
+The backend decision engine (`backend/engine.py` and `backend/forecasting.py`) evaluates live data using a three-tiered hierarchy:
 
 ### Layer 1: Deterministic Rules Baseline (Always Active)
 Ensures safe, dependable operation even when the weather API, ML models, or internet connection are unavailable.
