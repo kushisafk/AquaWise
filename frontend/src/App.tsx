@@ -1,11 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { DashboardPage, AnalyticsPage, CalibrationPage, HistoryPage, SettingsPage } from '@/pages/AquaWise';
 import NotFound from '@/pages/not-found';
-import { Bell, ChartNoAxesCombined, Droplets, History, Leaf, Settings2, SlidersHorizontal } from 'lucide-react';
+import { Bell, ChartNoAxesCombined, Droplets, History, Leaf, Settings2 } from 'lucide-react';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { useGetFieldState, useGetNotifications, useGetSettings, useAcknowledgeNotification, getGetNotificationsQueryKey, getGetFieldStateQueryKey, getGetSettingsQueryKey } from '@workspace/api-client-react';
 import type { SettingsLanguage } from '@workspace/api-client-react';
@@ -25,7 +23,6 @@ export const tr = (lang: Language, key: string) => { const selected = dictionari
 const navItems = [
   { href: '/', key: 'dash', icon: Leaf },
   { href: '/analytics', key: 'analytics', icon: ChartNoAxesCombined },
-  { href: '/calibration', key: 'calibration', icon: SlidersHorizontal },
   { href: '/history', key: 'history', icon: History },
   { href: '/settings', key: 'settings', icon: Settings2 },
 ];
@@ -84,11 +81,24 @@ function AppShell({ children }: { children: ReactNode }) {
         </aside>
         <div className="main-wrap">
           <header className="topbar">
-            <div><div className="field-caption">{tr(lang, 'field')}</div><div className="field-title">{tr(lang, 'dash')}</div></div>
+            <div className="topbar-brand">
+              <Link href="/" className="brand-link">
+                <span className="brand-dot"><Droplets size={16} strokeWidth={2.2} /></span>
+                <span className="brand-name">AquaWise</span>
+              </Link>
+            </div>
             <div className="top-actions">
-              <span className={`connection-chip ${isOffline ? 'offline' : ''}`} data-testid="status-connection"><i className="dot" />{isOffline ? tr(lang, 'offline') : tr(lang, 'connected')}</span>
-              <span className="sim-chip"><span className="dot" />{tr(lang, 'simulated')}</span>
-              <button aria-label={tr(lang, 'alertTitle')} className="btn btn-outline btn-small" style={{ position: 'relative', padding: '0 11px' }} onClick={() => setAlertsOpen(!alertsOpen)} data-testid="button-alerts"><Bell size={17} />{unread.length > 0 && <span style={{ background: '#bc654d', color: 'white', fontSize: 9, borderRadius: 99, padding: '2px 5px' }}>{unread.length}</span>}</button>
+              <span className={`connection-chip ${isOffline ? 'offline' : ''}`} data-testid="status-connection">
+                <i className="dot" />
+                <span>{isOffline ? tr(lang, 'offline') : tr(lang, 'connected')}</span>
+              </span>
+              <button aria-label={tr(lang, 'alertTitle')} className="icon-btn" onClick={() => setAlertsOpen(!alertsOpen)} data-testid="button-alerts">
+                <Bell size={17} strokeWidth={1.8} />
+                {unread.length > 0 && <span className="badge-count">{unread.length}</span>}
+              </button>
+              <Link href="/settings" className="icon-btn" aria-label={tr(lang, 'settings')}>
+                <Settings2 size={17} strokeWidth={1.8} />
+              </Link>
             </div>
           </header>
           {alertsOpen && <section className="alerts-popover" aria-label={tr(lang, 'alertTitle')}>
@@ -109,16 +119,30 @@ function AppShell({ children }: { children: ReactNode }) {
 }
 
 function Router() {
-  return <ErrorBoundary resetKey={useLocation()[0]}><AppShell><Switch>
-    <Route path="/" component={DashboardPage} />
-    <Route path="/analytics" component={AnalyticsPage} />
-    <Route path="/calibration" component={CalibrationPage} />
-    <Route path="/history" component={HistoryPage} />
-    <Route path="/settings" component={SettingsPage} />
-    <Route component={NotFound} />
-  </Switch></AppShell></ErrorBoundary>;
+  const [location] = useLocation();
+  return (
+    <ErrorBoundary resetKey={location}>
+      <AppShell>
+        <Switch>
+          <Route path="/" component={DashboardPage} />
+          <Route path="/analytics" component={AnalyticsPage} />
+          <Route path="/calibration" component={CalibrationPage} />
+          <Route path="/history" component={HistoryPage} />
+          <Route path="/settings" component={SettingsPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </AppShell>
+    </ErrorBoundary>
+  );
 }
+
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+        <Router />
+      </WouterRouter>
+    </QueryClientProvider>
+  );
 }
 export default App;
