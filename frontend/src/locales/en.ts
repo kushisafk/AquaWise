@@ -50,6 +50,12 @@ const page = {
   expandDetails: 'Show details', collapseDetails: 'Hide details', hourlyOutlook: 'Hour-by-hour forecast',
   modelStatus: 'Forecast engine', modelFallbackNotice: 'Water-balance simulator active.', modelExperimentalNotice: 'Experimental ML model active.',
   troubleshootField: 'Check soil settings', nextCheckTime: 'Next check in 6 hours',
+  scheduleTitle: 'Irrigation Schedule', scheduledWatering: 'Scheduled watering', recommendedSession: 'Recommended session',
+  timingReason: 'Timing reason', nextEvaluation: 'Next check',
+  scenarioDryNoRain: '1. Dry soil, no rain', scenarioDryRainSoon: '2. Dry soil, rain soon', scenarioRainNow: '3. Rain right now',
+  scenarioAdequate: '4. Moist soil', scenarioDryLater: '5. Dries out later', scenarioWeatherStale: '6. Stale weather',
+  scenarioWeatherUnavailable: '7. Weather unavailable', scenarioSensorFault: '8. Sensor error',
+  scenarioActiveWatering: '9. Active watering', scenarioTargetReached: '10. Target moisture reached',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

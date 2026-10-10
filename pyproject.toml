@@ -1,12 +1,11 @@
 [project]
 name = "aquawise-backend"
 version = "1.0.0"
-description = "AquaWise: Weather-Aware Irrigation Decision Support Backend & ML Engine"
+description = "AquaWise: Weather-Aware Irrigation Decision Support Backend & Deterministic Physics Engine"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.143.0",
     "httpx>=0.28.1",
     "pytest>=9.1.1",
-    "scikit-learn>=1.9.1",
     "uvicorn>=0.54.0",
 ]
