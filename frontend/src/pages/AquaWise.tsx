@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'wouter';
 import { useESP32 } from '@/hooks/use-esp32';
-import { formatUptime, getMoistureCategory, fetchESP32Status } from '@/lib/esp32';
+import { formatUptime, getMoistureCategory, fetchESP32Status, solarVoltageToSunIntensity } from '@/lib/esp32';
 
 const copy = { en, te, hi } as const;
 const tx = (lang: 'en' | 'te' | 'hi', key: keyof typeof copy.en) => (copy[lang][key] ?? copy.en[key] ?? key) as string;
@@ -784,21 +784,22 @@ export function DashboardPage() {
             </div>
           </div>
 
-          {/* Sun Intensity / Solar Panel Voltage */}
+          {/* Sun Intensity Sensor */}
           <div className="local-sensor-card" data-testid="esp32-solar-cell">
             <div className="local-sensor-card-header">
               <Sun size={15} className="sensor-icon color-sun" />
               <span className="local-sensor-card-label">{tx(l, 'sunIntensity')}</span>
             </div>
             <div className="local-sensor-card-value">
-              {esp32.data?.solar_panel_voltage_v != null
-                ? `${esp32.data.solar_panel_voltage_v.toFixed(2)} V`
-                : '—'}
+              {(() => {
+                const intensity = esp32.data?.sun_intensity_percent
+                  ?? solarVoltageToSunIntensity(esp32.data?.solar_panel_voltage_v);
+                return intensity != null ? `${intensity}%` : '—';
+              })()}
             </div>
             <div className="local-sensor-card-caption">
-              {esp32.data?.solar_panel_voltage_v != null && esp32.data.solar_panel_voltage_v > 4.0
-                ? (l === 'te' ? 'సౌర శక్తి యాక్టివ్' : l === 'hi' ? 'सौर ऊर्जा सक्रिय' : 'Solar power active')
-                : (l === 'te' ? 'సౌర వోల్టేజ్' : l === 'hi' ? 'सौर वोल्टेज' : 'Solar panel voltage')}
+              {l === 'te' ? 'సూర్యకాంతి తీవ్రత' : l === 'hi' ? 'सौर विकिरण सूचकांक' : 'Solar intensity index'}
+              {esp32.data?.solar_panel_voltage_v != null ? ` (${esp32.data.solar_panel_voltage_v.toFixed(2)} V)` : ''}
             </div>
           </div>
         </div>

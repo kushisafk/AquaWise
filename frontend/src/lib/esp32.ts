@@ -16,6 +16,7 @@ export interface ESP32Status {
   temperature_c: number | null;
   humidity_percent: number | null;
   solar_panel_voltage_v: number | null;
+  sun_intensity_percent: number | null;
   recommendation: string;
   reason: string;
   auto_pump: boolean;
@@ -25,6 +26,18 @@ export interface ESP32Status {
   confirm_samples: number;
   cooldown_ready: boolean;
   raw_payload?: Record<string, unknown>;
+}
+
+/**
+ * Convert solar panel voltage (0.0V - 5.5V reference) to relative sun intensity percentage (0-100%).
+ */
+export function solarVoltageToSunIntensity(voltage: number | null | undefined, maxVoltage = 5.5): number | null {
+  if (voltage == null || isNaN(voltage)) return null;
+  if (voltage > 20) {
+    return Math.min(100, Math.max(0, Math.round(voltage * 10) / 10));
+  }
+  const pct = Math.min(100, Math.max(0, (voltage / maxVoltage) * 100));
+  return Math.round(pct * 10) / 10;
 }
 
 export type ESP32ConnectionMode = 'proxy' | 'direct';
@@ -156,6 +169,8 @@ export function normalizeESP32Status(raw: any): ESP32Status {
     temperature_c: toNullableNum(raw.temperature_c),
     humidity_percent: toNullableNum(raw.humidity_percent),
     solar_panel_voltage_v: toNullableNum(raw.solar_panel_voltage_v),
+    sun_intensity_percent: toNullableNum(raw.sun_intensity_percent ?? raw.sunlight_percent ?? raw.sunlightPercent ?? raw.sun_intensity) ??
+      solarVoltageToSunIntensity(toNullableNum(raw.solar_panel_voltage_v)),
     recommendation: typeof raw.recommendation === 'string' && raw.recommendation.trim() ? raw.recommendation : 'WAIT',
     reason: typeof raw.reason === 'string' && raw.reason.trim() ? raw.reason : 'Hardware telemetry active.',
     auto_pump: Boolean(raw.auto_pump),
