@@ -1141,9 +1141,28 @@ def get_analytics():
         } for row in reversed(telemetry)]
 
         moisture = field["telemetry"]["soilMoisture"]
+<<<<<<< Updated upstream
 
         if moisture is None:
 
+=======
+        
+        # 3. Anomaly Detection (adapting when reading fails)
+        is_anomalous = False
+        if moisture is not None and len(history) >= 10:
+            try:
+                from sklearn.ensemble import IsolationForest
+                import numpy as np
+                hist_vals = [h["moisturePercent"] for h in history]
+                iso_model = IsolationForest(contamination=0.05, random_state=42)
+                iso_model.fit(np.array(hist_vals).reshape(-1, 1))
+                if iso_model.predict(np.array([[moisture]]))[0] == -1:
+                    is_anomalous = True
+            except Exception:
+                pass
+
+        if moisture is None or is_anomalous:
+>>>>>>> Stashed changes
             moisture = float(get_value(db, "simulation", DEFAULT_SIMULATION)["moisture"])
 
         temp = field["telemetry"]["temperatureC"] or 26.0
