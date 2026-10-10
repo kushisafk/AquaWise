@@ -1857,3 +1857,147 @@ def submit_feedback(payload: FeedbackInput):
 
         }
 
+
+# ==========================================
+# ESP32 Hardware HTTP Proxy & Management
+# ==========================================
+
+import httpx
+
+DEFAULT_ESP32_URL = os.environ.get("ESP32_URL", "http://192.168.4.1")
+
+
+class ESP32ConfigInput(BaseModel):
+    esp32_url: str = Field(default="http://192.168.4.1", max_length=255)
+
+
+def _get_esp32_url(db: sqlite3.Connection) -> str:
+    url = get_value(db, "setting:esp32_url", DEFAULT_ESP32_URL)
+    if isinstance(url, str) and url.strip():
+        clean = url.strip().rstrip("/")
+        if not (clean.startswith("http://") or clean.startswith("https://")):
+            clean = f"http://{clean}"
+        return clean
+    return DEFAULT_ESP32_URL.rstrip("/")
+
+
+@app.get(f"{API_PREFIX}/esp32/config")
+def get_esp32_config():
+    with connect_db() as db:
+        return {"esp32_url": _get_esp32_url(db)}
+
+
+@app.post(f"{API_PREFIX}/esp32/config")
+def update_esp32_config(payload: ESP32ConfigInput):
+    clean_url = payload.esp32_url.strip().rstrip("/")
+    if not (clean_url.startswith("http://") or clean_url.startswith("https://")):
+        clean_url = f"http://{clean_url}"
+    with DB_LOCK, connect_db() as db:
+        set_value(db, "setting:esp32_url", clean_url)
+        return {"esp32_url": clean_url}
+
+
+@app.get(f"{API_PREFIX}/esp32/status")
+async def esp32_proxy_status(url: str | None = None):
+    with connect_db() as db:
+        base_url = url.strip().rstrip("/") if url else _get_esp32_url(db)
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        base_url = f"http://{base_url}"
+    target = f"{base_url}/api/status"
+    try:
+        async with httpx.AsyncClient(timeout=2.5) as client:
+            resp = await client.get(target)
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=resp.status_code, detail=resp.text or f"ESP32 returned HTTP {resp.status_code}")
+            return resp.json()
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to connect to ESP32 at {base_url}: {str(exc)}"
+        )
+
+
+@app.post(f"{API_PREFIX}/esp32/pump/start")
+async def esp32_proxy_pump_start(url: str | None = None):
+    with connect_db() as db:
+        base_url = url.strip().rstrip("/") if url else _get_esp32_url(db)
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        base_url = f"http://{base_url}"
+    target = f"{base_url}/api/pump/start"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(target)
+            if resp.status_code >= 400:
+                try:
+                    data = resp.json()
+                    detail_msg = data.get("detail") or data.get("error") or resp.text
+                except Exception:
+                    detail_msg = resp.text or f"ESP32 error {resp.status_code}"
+                raise HTTPException(status_code=resp.status_code, detail=detail_msg)
+            try:
+                return resp.json()
+            except Exception:
+                return {"status": "ok", "message": "Pump start pulse triggered"}
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to communicate with ESP32 at {base_url}: {str(exc)}"
+        )
+
+
+@app.post(f"{API_PREFIX}/esp32/pump/stop")
+async def esp32_proxy_pump_stop(url: str | None = None):
+    with connect_db() as db:
+        base_url = url.strip().rstrip("/") if url else _get_esp32_url(db)
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        base_url = f"http://{base_url}"
+    target = f"{base_url}/api/pump/stop"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(target)
+            if resp.status_code >= 400:
+                try:
+                    data = resp.json()
+                    detail_msg = data.get("detail") or data.get("error") or resp.text
+                except Exception:
+                    detail_msg = resp.text or f"ESP32 error {resp.status_code}"
+                raise HTTPException(status_code=resp.status_code, detail=detail_msg)
+            try:
+                return resp.json()
+            except Exception:
+                return {"status": "ok", "message": "Pump stopped"}
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to communicate with ESP32 at {base_url}: {str(exc)}"
+        )
+
+
+@app.post(f"{API_PREFIX}/esp32/auto/toggle")
+async def esp32_proxy_auto_toggle(url: str | None = None):
+    with connect_db() as db:
+        base_url = url.strip().rstrip("/") if url else _get_esp32_url(db)
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        base_url = f"http://{base_url}"
+    target = f"{base_url}/api/auto/toggle"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(target)
+            if resp.status_code >= 400:
+                try:
+                    data = resp.json()
+                    detail_msg = data.get("detail") or data.get("error") or resp.text
+                except Exception:
+                    detail_msg = resp.text or f"ESP32 error {resp.status_code}"
+                raise HTTPException(status_code=resp.status_code, detail=detail_msg)
+            try:
+                return resp.json()
+            except Exception:
+                return {"status": "ok", "message": "Automatic mode toggled"}
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to communicate with ESP32 at {base_url}: {str(exc)}"
+        )
+
+
