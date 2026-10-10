@@ -6,15 +6,17 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#f6f7f1",
   "theme_color": "#234d3f",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icons/aquawise-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "/icons/aquawise-512.png",

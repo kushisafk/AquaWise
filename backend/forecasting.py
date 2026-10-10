@@ -143,6 +143,7 @@ def forecast_points(
     temp_rolling_3h_avg: float | None = None,
     time_of_day: float = 12.0,
     time_since_last_irrigation: float = 24.0,
+    hourly_weather: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     if _model is None and _model_status.startswith("Water-balance simulator"):
         train_experimental_model()

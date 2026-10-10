@@ -745,6 +745,7 @@ def get_analytics():
             field["irrigation"]["durationMinutes"] if field["irrigation"]["active"] else 0,
             time_of_day=time_of_day,
             time_since_last_irrigation=time_since_last_irrigation,
+            hourly_weather=field["weather"].get("hourly"),
         )
         settings = read_settings(db)
         strategies = strategy_comparison(

@@ -50,6 +50,12 @@ const page = {
   expandDetails: 'विवरण देखें', collapseDetails: 'विवरण छिपाएं', hourlyOutlook: 'घंटेवार अनुमान',
   modelStatus: 'पूर्वानुमान इंजन', modelFallbackNotice: 'जल-संतुलन सिमुलेटर सक्रिय है।', modelExperimentalNotice: 'प्रयोगात्मक ML मॉडल सक्रिय है।',
   troubleshootField: 'मिट्टी सेटिंग्स की जांच करें', nextCheckTime: 'अगली जांच 6 घंटे में',
+  scheduleTitle: 'सिंचाई अनुसूची', scheduledWatering: 'निर्धारित सिंचाई', recommendedSession: 'अनुशंसित सत्र',
+  timingReason: 'समय का कारण', nextEvaluation: 'अगली जांच',
+  scenarioDryNoRain: '1. सूखी मिट्टी, बारिश नहीं', scenarioDryRainSoon: '2. सूखी मिट्टी, जल्द बारिश', scenarioRainNow: '3. अभी बारिश हो रही है',
+  scenarioAdequate: '4. पर्याप्त नमी', scenarioDryLater: '5. बाद में सूख सकती है', scenarioWeatherStale: '6. पुराना मौसम',
+  scenarioWeatherUnavailable: '7. मौसम उपलब्ध नहीं', scenarioSensorFault: '8. सेंसर त्रुटि',
+  scenarioActiveWatering: '9. सिंचाई जारी है', scenarioTargetReached: '10. लक्ष्य नमी पूरी हुई',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

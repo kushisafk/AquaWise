@@ -188,3 +188,51 @@ def test_notification_acknowledgement(client):
     result = client.post(f"/api/notifications/{notification_id}/acknowledge")
     assert result.status_code == 200
     assert result.json()["acknowledged"] is True
+
+
+def test_schedule_api_endpoint(client):
+    res = client.get("/api/schedule")
+    assert res.status_code == 200
+    data = res.json()
+    assert "status" in data
+    assert "targetMoisture" in data
+    assert "timingReason" in data
+    assert "assumptions" in data
+
+
+def test_ten_test_scenarios_and_reset(client):
+    scenarios = [
+        ("dry_no_rain", "WATER NOW"),
+        ("dry_rain_soon", "WAIT"),
+        ("rain_now", "WAIT"),
+        ("adequate", "WAIT"),
+        ("dry_later", "WAIT"),
+        ("weather_stale", "WATER NOW"),
+        ("weather_unavailable", "WATER NOW"),
+        ("sensor_fault", "CHECK FIELD"),
+        ("active_watering", "WATER NOW"),
+        ("target_reached", "WAIT"),
+    ]
+    for key, expected_status in scenarios:
+        res = client.post("/api/test-scenario", json={"scenarioKey": key})
+        assert res.status_code == 200, f"Scenario {key} failed"
+        field = res.json()
+        assert field["recommendation"]["status"] == expected_status, f"Scenario {key} expected {expected_status}, got {field['recommendation']['status']}"
+
+    # Reset restores default state
+    reset_res = client.post("/api/reset")
+    assert reset_res.status_code == 200
+    reset_field = reset_res.json()
+    assert reset_field["testMode"] is False
+
+
+def test_history_deduplication_during_polling(client):
+    # Polling /api/field repeatedly should not create duplicate recommendation records
+    client.get("/api/field")
+    client.get("/api/field")
+    client.get("/api/field")
+    history = client.get("/api/history?category=recommendation").json()
+    # Check consecutive items don't duplicate identical statuses
+    for i in range(len(history) - 1):
+        assert history[i]["title"] != history[i + 1]["title"]
+

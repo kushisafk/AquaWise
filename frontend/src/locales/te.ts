@@ -50,6 +50,12 @@ const page = {
   expandDetails: 'వివరాలు చూపించు', collapseDetails: 'వివరాలు దాచు', hourlyOutlook: 'గంటల వారీ అంచనా',
   modelStatus: 'అంచనా ఇంజిన్', modelFallbackNotice: 'వాటర్-బ్యాలెన్స్ సిమ్యులేటర్ పనిచేస్తోంది.', modelExperimentalNotice: 'ప్రయోగాత్మక ML మోడల్ పనిచేస్తోంది.',
   troubleshootField: 'మట్టి అమరికను తనిఖీ చేయండి', nextCheckTime: 'తదుపరి తనిఖీ 6 గంటల్లో',
+  scheduleTitle: 'నీటి షెడ్యూల్', scheduledWatering: 'షెడ్యూల్ చేసిన నీటి చర్య', recommendedSession: 'సిఫార్సు చేసిన సెషన్',
+  timingReason: 'సమయం కారణం', nextEvaluation: 'తదుపరి తనిఖీ',
+  scenarioDryNoRain: '1. పొడి నేల, వర్షం లేదు', scenarioDryRainSoon: '2. పొడి నేల, త్వరలో వర్షం', scenarioRainNow: '3. ప్రస్తుతం వర్షం',
+  scenarioAdequate: '4. తగినంత తేమ', scenarioDryLater: '5. తర్వాత ఎండే అవకాశం', scenarioWeatherStale: '6. పాత వాతావరణం',
+  scenarioWeatherUnavailable: '7. వాతావరణం లేదు', scenarioSensorFault: '8. సెన్సార్ లోపం',
+  scenarioActiveWatering: '9. నీరు పారుతోంది', scenarioTargetReached: '10. లక్ష్య తేమ చేరింది',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

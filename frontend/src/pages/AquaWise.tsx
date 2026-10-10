@@ -173,60 +173,118 @@ export function DashboardPage() {
     );
   };
 
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.getVoices();
+    const onVoices = () => { window.speechSynthesis.getVoices(); };
+    window.speechSynthesis.onvoiceschanged = onVoices;
+    return () => {
+      if (window.speechSynthesis.onvoiceschanged === onVoices) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
+
   const readAloud = () => {
     if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
       notify(tx(l, 'voiceUnavailable'));
       return;
     }
     if (!recommendation && !isWatering) return;
+
     const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find((item) => item.lang.toLowerCase().startsWith(l));
-    if (l !== 'en' && !voice) {
+    const langVoices = voices.filter((v) => {
+      const code = v.lang.toLowerCase().replace('_', '-');
+      return code.startsWith(l) || (l === 'te' && code.includes('te')) || (l === 'hi' && code.includes('hi'));
+    });
+
+    const isMale = (v: SpeechSynthesisVoice) => {
+      const text = `${v.name} ${v.voiceURI}`.toLowerCase();
+      return (
+        text.includes('male') ||
+        text.includes('-tem-') || text.includes('te-in-x-tem') ||
+        text.includes('-him-') || text.includes('hi-in-x-him') ||
+        text.includes('-enm-') || text.includes('en-in-x-enm') ||
+        text.includes('-end-') || text.includes('mohan') ||
+        text.includes('hemant') || text.includes('ravi') ||
+        text.includes('david') || text.includes('george')
+      );
+    };
+
+    const localLangVoices = langVoices.filter((v) => v.localService);
+    const candidateVoices = localLangVoices.length > 0 ? localLangVoices : langVoices;
+    const selectedVoice = candidateVoices.find(isMale) || candidateVoices[0];
+    if (l !== 'en' && !selectedVoice && langVoices.length === 0 && voices.length === 0) {
       notify(tx(l, 'voiceMissing'));
       return;
     }
 
+    const moisture = state?.telemetry.soilMoisture != null ? Math.round(state.telemetry.soilMoisture) : null;
+    const temp = Math.round(weather.data?.temperatureC ?? state?.telemetry.temperatureC ?? 28);
+    const rainChance = Math.round(weather.data?.rainProbability6h ?? 0);
+    const rainMm = Math.round((weather.data?.precipitationMm6h ?? 0) * 10) / 10;
     const duration = recommendation?.durationMinutes ?? state?.irrigation.durationMinutes ?? 15;
+    const targetMoisture = state?.targetMoisture ?? 55;
+
     let spokenText = '';
 
     if (isWatering) {
-      spokenText = l === 'te'
-        ? `${duration} నిమిషాలు నీరు పెట్టడం జరుగుతోంది.`
-        : l === 'hi'
-          ? `${duration} मिनट के लिए सिंचाई चल रही है।`
-          : `Watering is running for ${duration} minutes.`;
-    } else if (status === 'WATER NOW') {
-      spokenText = l === 'te'
-        ? `మీ పొలానికి ${duration} నిమిషాలు నీరు పెట్టండి. నేల ఎండిపోయింది.`
-        : l === 'hi'
-          ? `अपने खेत में ${duration} मिनट पानी दें। मिट्टी सूखी है।`
-          : `Water your field for ${duration} minutes. The soil is dry.`;
-    } else if (status === 'CHECK FIELD') {
-      spokenText = l === 'te'
-        ? 'దయచేసి మీ పొలాన్ని తనిఖీ చేయండి. తేమ రీడింగ్ సరిగా లేదు.'
-        : l === 'hi'
-          ? 'कृपया अपना खेत देखें। नमी सामान्य नहीं है।'
-          : 'Please check your field. The soil reading looks unusual.';
-    } else {
-      const isRain = weather.data?.rainingNow || (weather.data?.rainProbability6h ?? 0) >= 50;
-      if (isRain) {
-        spokenText = l === 'te'
-          ? 'వేచి ఉండండి, త్వరలో వర్షం రానుంది. నీరు పెట్టవద్దు.'
-          : l === 'hi'
-            ? 'इंतज़ार करें, जल्द बारिश हो सकती है। पानी न दें।'
-            : 'Wait, rain is coming soon. No need to water.';
+      if (l === 'te') {
+        spokenText = `రైతు సోదరా, ప్రస్తుతం మీ పొలానికి నీరు పెట్టడం జరుగుతోంది. ఈ సెషన్ మొత్తం ${duration} నిమిషాలు నడుస్తుంది, ఇది నేల తేమను మీ లక్ష్యమైన ${targetMoisture} శాతానికి పెంచుతుంది. మీరు కోరుకుంటే ఎప్పుడైనా నీరు ఆపవచ్చు.`;
+      } else if (l === 'hi') {
+        spokenText = `किसान भाई, इस समय आपके खेत में सिंचाई चल रही है। यह चक्र कुल ${duration} मिनट चलेगा, जिससे मिट्टी की नमी आपके लक्ष्य ${targetMoisture} प्रतिशत तक पहुंचेगी। आप जब चाहें सिंचाई रोक सकते हैं।`;
       } else {
-        spokenText = l === 'te'
-          ? 'ఇప్పుడు నీరు అవసరం లేదు. నేలలో సరిపడా తేమ ఉంది.'
-          : l === 'hi'
-            ? 'अभी पानी देने की ज़रूरत नहीं है। मिट्टी में पर्याप्त नमी है।'
-            : 'No need to water right now. Your soil has enough moisture.';
+        spokenText = `Farmer friend, watering is currently underway for a total of ${duration} minutes. This session will replenish your soil moisture towards your target of ${targetMoisture} percent. You can tap stop watering at any time if you wish.`;
+      }
+    } else if (status === 'WATER NOW') {
+      if (l === 'te') {
+        spokenText = `రైతు సోదరా, మీ పొలంలో మట్టి తేమ ప్రస్తుతం ${moisture != null ? `${moisture} శాతం మాత్రమే ఉంది` : 'చాలా తక్కువగా ఉంది'}, ఇది పంటకు కావలసిన స్థాయి కంటే తక్కువ. రాబోయే 6 గంటల్లో వర్ష సూచన లేదు మరియు ఉష్ణోగ్రత ${temp} డిగ్రీలుగా ఉంది. పంట వేర్లు ఎండిపోకుండా ఉండటానికి, మీ పొలానికి ఇప్పుడు ${duration} నిమిషాలు నీరు పెట్టడం మంచిది. సిద్ధంగా ఉన్నప్పుడు నీరు పెట్టడం ప్రారంభించండి.`;
+      } else if (l === 'hi') {
+        spokenText = `किसान भाई, आपके खेत में मिट्टी की नमी अभी ${moisture != null ? `${moisture} प्रतिशत ही बची है` : 'काफी कम है'}, जो फसल की आवश्यकता से कम है। अगले 6 घंटे में बारिश की कोई संभावना नहीं है और तापमान ${temp} डिग्री है। पौधों को सूखे के तनाव से बचाने के लिए, अभी ${duration} मिनट सिंचाई करने की सलाह दी जाती है। तैयार होने पर पानी देना शुरू करें।`;
+      } else {
+        spokenText = `Farmer friend, your soil moisture is currently down to ${moisture != null ? `${moisture} percent` : 'a low level'}, which is below your crop's healthy range. There is no rain expected in the next 6 hours, and temperature is ${temp} degrees Celsius. We recommend watering your field for ${duration} minutes now to keep the root zone healthy and prevent moisture stress.`;
+      }
+    } else if (status === 'CHECK FIELD') {
+      if (l === 'te') {
+        spokenText = `రైతు సోదరా, సిస్టమ్‌కు ప్రస్తుతం స్పష్టమైన మట్టి తేమ రీడింగ్ అందడం లేదు. సెన్సార్ వదులుగా ఉండవచ్చు లేదా నేల పరిస్థితిలో తేడా ఉండవచ్చు. దయచేసి నీరు పెట్టే ముందు మీ పొలాన్ని మరియు తేమ సెన్సార్‌ను స్వయంగా ఒకసారి పరిశీలించండి.`;
+      } else if (l === 'hi') {
+        spokenText = `किसान भाई, सिस्टम को अभी खेत से मिट्टी की सही नमी की रीडिंग नहीं मिल पा रही है। हो सकता है सेंसर में कोई समस्या हो। पानी देने से पहले कृपया खेत में जाकर मिट्टी और सेंसर की स्थिति खुद जांचें।`;
+      } else {
+        spokenText = `Farmer friend, the system is unable to get a reliable soil moisture reading right now. The sensor might be loose or conditions unexpected. Please physically check your field and sensor before making an irrigation decision.`;
+      }
+    } else {
+      // WAIT
+      const isRain = weather.data?.rainingNow || rainChance >= 50;
+      if (isRain) {
+        if (l === 'te') {
+          spokenText = `రైతు సోదరా, మీ పొలంలో తేమ తక్కువగా ఉన్నప్పటికీ, రాబోయే 6 గంటల్లో ${rainChance} శాతం వర్షం వచ్చే అవకాశం ఉంది. ప్రస్తుతానికి నీరు పెట్టవద్దు, వేచి ఉండండి. సహజ వర్షాన్ని సద్వినియోగం చేసుకోవడం వల్ల మీ నీరు ఆదా అవుతుంది మరియు నేల అతిగా తడవకుండా ఉంటుంది.`;
+        } else if (l === 'hi') {
+          spokenText = `किसान भाई, भले ही मिट्टी में नमी कम हो, लेकिन अगले 6 घंटे में ${rainChance} प्रतिशत बारिश की संभावना है। अभी पानी न दें और इंतज़ार करें। प्राकृतिक बारिश का इंतज़ार करने से पानी की बचत होगी और खेत में दलदल नहीं बनेगा।`;
+        } else {
+          spokenText = `Farmer friend, although soil moisture is low, weather forecasts show a ${rainChance} percent chance of rain with ${rainMm} millimeters expected within the next 6 hours. Hold off on watering for now. Waiting for the rain will save your water and prevent soil saturation.`;
+        }
+      } else {
+        if (l === 'te') {
+          spokenText = `రైతు సోదరా, మీ పొలంలో తేమ పరిస్థితి చాలా బాగుంది. మట్టి తేమ ప్రస్తుతం ${moisture != null ? `${moisture} శాతంగా ఉంది` : 'తగినంతగా ఉంది'}, ఇది మీ పంట ఆరోగ్యకరమైన పెరుగుదలకు సరిపోతుంది. ఉష్ణోగ్రత ${temp} డిగ్రీలుగా ఉంది మరియు పంటకు నీటి కొరత లేదు, కాబట్టి ఈ రోజు నీరు అవసరం లేదు.`;
+        } else if (l === 'hi') {
+          spokenText = `किसान भाई, आपके खेत में नमी की स्थिति बहुत अच्छी है। मिट्टी की नमी अभी ${moisture != null ? `${moisture} प्रतिशत है` : 'पर्याप्त है'}, जो फसल की अच्छी बढ़वार के लिए काफी है। तापमान ${temp} डिग्री है और पौधों को पूरा पानी मिल रहा है, इसलिए आज अतिरिक्त पानी देने की आवश्यकता नहीं है।`;
+        } else {
+          spokenText = `Farmer friend, your field is in great shape. Soil moisture is currently healthy at ${moisture != null ? `${moisture} percent` : 'a good level'}, which is plenty for your crops. With temperatures at ${temp} degrees, your plants are not under stress, so no watering is needed today.`;
+        }
       }
     }
 
     const utterance = new SpeechSynthesisUtterance(spokenText);
     utterance.lang = l === 'te' ? 'te-IN' : l === 'hi' ? 'hi-IN' : 'en-IN';
-    if (voice) utterance.voice = voice;
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+    // Male vocal tuning:
+    // When a male voice package is detected, pitch 0.90 keeps natural baritone timbre.
+    // If only the device's default female voice package is installed, pitch 0.80 lowers
+    // formant frequencies into a warm, natural, resonant male elder advisor register.
+    utterance.pitch = selectedVoice && isMale(selectedVoice) ? 0.90 : 0.80;
+    utterance.rate = 0.92;
     utterance.onerror = () => notify(tx(l, 'voiceError'));
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
@@ -292,6 +350,26 @@ export function DashboardPage() {
 
         <p className="hero-explanation">{explanation}</p>
 
+        {/* Dynamic Schedule Outlook */}
+        {((state as any)?.schedule || recommendation) && (
+          <div className="hero-schedule-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+            {status === 'WATER NOW' && ((state as any)?.schedule?.durationMinutes || recommendation?.durationMinutes) ? (
+              <span>
+                {tx(l, 'recommendedSession')}: {(state as any)?.schedule?.durationMinutes ?? recommendation?.durationMinutes} {tx(l, 'minutes')}
+                {((state as any)?.schedule?.estimatedLitres ?? (recommendation as any)?.estimatedLitres) ? ` · ${((state as any)?.schedule?.estimatedLitres ?? (recommendation as any)?.estimatedLitres)} L` : ''}
+              </span>
+            ) : status === 'WAIT' && (state as any)?.schedule?.recommendedStartTime ? (
+              <span>
+                {tx(l, 'scheduledWatering')}: {fmtTime((state as any)?.schedule?.recommendedStartTime)} ({(state as any)?.schedule?.durationMinutes} min · {(state as any)?.schedule?.estimatedLitres} L)
+              </span>
+            ) : status === 'WAIT' && (state as any)?.schedule?.nextEvaluationTime ? (
+              <span>
+                {tx(l, 'nextEvaluation')}: {fmtTime((state as any)?.schedule?.nextEvaluationTime)}
+              </span>
+            ) : null}
+          </div>
+        )}
+
         {/* Primary Single Action */}
         <div className="hero-actions-container">
           {isWatering ? (
@@ -314,7 +392,7 @@ export function DashboardPage() {
               {start.isPending ? <LoaderCircle size={18} className="animate-spin" /> : <Droplets size={18} />}
               <span>
                 {tx(l, 'water')}
-                {recommendation?.durationMinutes ? ` (${recommendation.durationMinutes} ${tx(l, 'minutes')})` : ''}
+                {recommendation?.durationMinutes ? ` (${recommendation.durationMinutes} ${tx(l, 'minutes')}${((state as any)?.schedule?.estimatedLitres ?? (recommendation as any)?.estimatedLitres) ? ` · ${((state as any)?.schedule?.estimatedLitres ?? (recommendation as any)?.estimatedLitres)} L` : ''})` : ''}
               </span>
             </button>
           ) : status === 'CHECK FIELD' ? (
@@ -562,6 +640,47 @@ export function AnalyticsPage() {
               <Chart data={data} />
             )}
           </section>
+
+          {/* Dynamic Irrigation Schedule Plan */}
+          {(data as any)?.schedule && (
+            <section className="calm-card" data-testid="card-irrigation-schedule">
+              <div className="section-header">
+                <div>
+                  <div className="eyebrow" style={{ marginBottom: 4 }}>{tx(l, 'scheduleTitle')}</div>
+                  <h2 className="section-title-clean">
+                    {(data as any).schedule.recommendedStartTime
+                      ? `${tx(l, 'scheduledWatering')}: ${fmtTime((data as any).schedule.recommendedStartTime)}`
+                      : (data as any).schedule.status === 'WATER NOW'
+                        ? tx(l, 'water')
+                        : tx(l, 'allSet')}
+                  </h2>
+                  <p className="section-subtitle-clean">{(data as any).schedule.timingReason}</p>
+                </div>
+                {(data as any).schedule.durationMinutes ? (
+                  <div className="strategy-number">
+                    {(data as any).schedule.durationMinutes} <span className="unit">{tx(l, 'minutes')} · {(data as any).schedule.estimatedLitres} L</span>
+                  </div>
+                ) : null}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 12 }}>
+                <div className="summary-chip" style={{ padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tx(l, 'target')}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{(data as any).schedule.targetMoisture}%</div>
+                </div>
+                <div className="summary-chip" style={{ padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tx(l, 'nextEvaluation')}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtTime((data as any).schedule.nextEvaluationTime)}</div>
+                </div>
+              </div>
+
+              {(data as any).schedule.assumptions && (
+                <div className="strategy-assumptions-box" style={{ marginTop: 10 }}>
+                  {(data as any).schedule.assumptions}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Default 2: Preferred Irrigation Schedule Summary */}
           {bestStrategy && baselineStrategy && (
@@ -1059,6 +1178,19 @@ export function SettingsPage() {
     );
   };
 
+  const applyScenarioPreset = (scenarioKey: string) => {
+    scenario.mutate(
+      { data: { scenarioKey } as unknown as TestScenarioInput },
+      {
+        onSuccess: () => {
+          qk.forEach((queryKey) => void client.invalidateQueries({ queryKey }));
+          notify(l === 'te' ? 'పరీక్ష పరిస్థితి వర్తింపజేయబడింది.' : l === 'hi' ? 'परीक्षण स्थिति लागू की गई।' : 'Test scenario applied.');
+        },
+        onError: (error) => notify(errText(error)),
+      }
+    );
+  };
+
   const applyScenario = (mode: 'dry' | 'rain' | 'fault') => {
     const input: TestScenarioInput = {
       soilMoisture: mode === 'fault' ? null : Number(scenarioMoisture),
@@ -1466,36 +1598,111 @@ export function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="test-actions-grid" style={{ marginTop: 16 }}>
-                  <button
-                    className="btn btn-outline btn-small"
-                    disabled={scenario.isPending || !form.testMode}
-                    onClick={() => applyScenario('dry')}
-                    data-testid="button-test-dry"
-                  >
-                    {tx(l, 'dryScenario')}
-                  </button>
-                  <button
-                    className="btn btn-outline btn-small"
-                    disabled={scenario.isPending || !form.testMode}
-                    onClick={() => applyScenario('rain')}
-                    data-testid="button-test-rain"
-                  >
-                    {tx(l, 'rainScenario')}
-                  </button>
-                  <button
-                    className="btn btn-outline btn-small"
-                    disabled={scenario.isPending || !form.testMode}
-                    onClick={() => applyScenario('fault')}
-                    data-testid="button-test-fault"
-                  >
-                    {tx(l, 'faultScenario')}
-                  </button>
+                <div style={{ marginTop: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 8 }}>
+                    {tx(l, 'useTest')} (10 Scenarios)
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 14 }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('dry_no_rain')}
+                      data-testid="button-scenario-dry-no-rain"
+                    >
+                      {tx(l, 'scenarioDryNoRain')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('dry_rain_soon')}
+                      data-testid="button-scenario-dry-rain-soon"
+                    >
+                      {tx(l, 'scenarioDryRainSoon')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('rain_now')}
+                      data-testid="button-scenario-rain-now"
+                    >
+                      {tx(l, 'scenarioRainNow')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('adequate')}
+                      data-testid="button-scenario-adequate"
+                    >
+                      {tx(l, 'scenarioAdequate')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('dry_later')}
+                      data-testid="button-scenario-dry-later"
+                    >
+                      {tx(l, 'scenarioDryLater')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('weather_stale')}
+                      data-testid="button-scenario-weather-stale"
+                    >
+                      {tx(l, 'scenarioWeatherStale')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('weather_unavailable')}
+                      data-testid="button-scenario-weather-unavailable"
+                    >
+                      {tx(l, 'scenarioWeatherUnavailable')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('sensor_fault')}
+                      data-testid="button-scenario-sensor-fault"
+                    >
+                      {tx(l, 'scenarioSensorFault')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('active_watering')}
+                      data-testid="button-scenario-active-watering"
+                    >
+                      {tx(l, 'scenarioActiveWatering')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-small"
+                      disabled={scenario.isPending || !form.testMode}
+                      onClick={() => applyScenarioPreset('target_reached')}
+                      data-testid="button-scenario-target-reached"
+                    >
+                      {tx(l, 'scenarioTargetReached')}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="test-actions-grid" style={{ marginTop: 12 }}>
                   <button
                     className="btn btn-danger btn-small"
                     disabled={reset.isPending}
                     onClick={resetAll}
                     data-testid="button-reset-field"
+                    style={{ width: '100%' }}
                   >
                     <RotateCcw size={14} />
                     <span>{tx(l, 'reset')}</span>
