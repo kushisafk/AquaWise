@@ -56,6 +56,8 @@ const page = {
   scenarioAdequate: '4. Moist soil', scenarioDryLater: '5. Dries out later', scenarioWeatherStale: '6. Stale weather',
   scenarioWeatherUnavailable: '7. Weather unavailable', scenarioSensorFault: '8. Sensor error',
   scenarioActiveWatering: '9. Active watering', scenarioTargetReached: '10. Target moisture reached',
+  cropType: 'Crop type', cropSelectPlaceholder: 'Select crop...', assumedSoilType: 'Assumed soil type',
+  soilAssumptionNote: 'Estimated from crop type (informational only)',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

@@ -113,6 +113,106 @@ const LOCATION_PRESETS = [
   { label: 'Bengaluru, Karnataka', lat: 12.9716, lon: 77.5946 },
 ];
 
+interface CropOption {
+  id: string;
+  labels: Record<'en' | 'te' | 'hi', string>;
+  soilTypes: Record<'en' | 'te' | 'hi', string>;
+}
+
+const CROPS: CropOption[] = [
+  {
+    id: 'cotton',
+    labels: { en: 'Cotton', te: 'పత్తి (Cotton)', hi: 'कपास (Cotton)' },
+    soilTypes: {
+      en: 'Deep Black Clay / Regur Soil',
+      te: 'లోతైన నల్లరేగడి నేల (Deep Black Soil)',
+      hi: 'गहरी काली मिट्टी / रेगुर (Deep Black Soil)',
+    },
+  },
+  {
+    id: 'paddy',
+    labels: { en: 'Paddy / Rice', te: 'వరి (Paddy / Rice)', hi: 'धान / चावल (Paddy / Rice)' },
+    soilTypes: {
+      en: 'Clayey Alluvial Soil (High moisture retention)',
+      te: 'బంకమట్టి / ఒండ్రు నేల (నీటి నిలుపుదల ఎక్కువ)',
+      hi: 'चिकनी जलोढ़ मिट्टी (अधिक जल संचयन)',
+    },
+  },
+  {
+    id: 'chilli',
+    labels: { en: 'Chilli', te: 'మిర్చి (Chilli)', hi: 'मिर्च (Chilli)' },
+    soilTypes: {
+      en: 'Black / Red Loamy Soil',
+      te: 'నల్ల లేదా ఎర్ర గరప నేల',
+      hi: 'काली / लाल दोमट मिट्टी',
+    },
+  },
+  {
+    id: 'maize',
+    labels: { en: 'Maize / Corn', te: 'మొక్కజొన్న (Maize)', hi: 'मक्का (Maize)' },
+    soilTypes: {
+      en: 'Well-drained Loam / Red Soil',
+      te: 'ఎర్ర గరప నేల',
+      hi: 'अच्छी जल निकासी वाली दोमट / लाल मिट्टी',
+    },
+  },
+  {
+    id: 'groundnut',
+    labels: { en: 'Groundnut / Peanut', te: 'వేరుశనగ (Groundnut)', hi: 'मूंगफली (Groundnut)' },
+    soilTypes: {
+      en: 'Sandy Loam / Light Red Soil',
+      te: 'ఇసుక గరప నేల',
+      hi: 'रेतीली दोमट / हल्की लाल मिट्टी',
+    },
+  },
+  {
+    id: 'soybean',
+    labels: { en: 'Soybean', te: 'సోయాబీన్ (Soybean)', hi: 'सोयाबीन (Soybean)' },
+    soilTypes: {
+      en: 'Well-drained Clay / Loam Soil',
+      te: 'మంచి మురుగునీటి పారుదల గల నల్ల నేల',
+      hi: 'अच्छी जल निकासी वाली काली / दोमट मिट्टी',
+    },
+  },
+  {
+    id: 'sugarcane',
+    labels: { en: 'Sugarcane', te: 'చెరకు (Sugarcane)', hi: 'गन्ना (Sugarcane)' },
+    soilTypes: {
+      en: 'Deep Rich Loamy Soil',
+      te: 'సారవంతమైన లోతైన గరప నేల',
+      hi: 'गहरी उपजाऊ दोमट मिट्टी',
+    },
+  },
+  {
+    id: 'tomato',
+    labels: { en: 'Tomato', te: 'టమాటా (Tomato)', hi: 'टमाटर (Tomato)' },
+    soilTypes: {
+      en: 'Well-drained Sandy Loam',
+      te: 'నీరు నిలవని ఇసుక గరప నేల',
+      hi: 'अच्छी जल निकासी वाली रेतीली दोमट मिट्टी',
+    },
+  },
+  {
+    id: 'wheat',
+    labels: { en: 'Wheat', te: 'గోధుమ (Wheat)', hi: 'गेहूं (Wheat)' },
+    soilTypes: {
+      en: 'Clay Loam Soil',
+      te: 'బంకమట్టి గరప నేల',
+      hi: 'चिकनी दोमट मिट्टी',
+    },
+  },
+  {
+    id: 'pulses',
+    labels: { en: 'Pulses / Red Gram', te: 'కందులు / పప్పుధాన్యాలు (Pulses)', hi: 'अरहर / दालें (Pulses)' },
+    soilTypes: {
+      en: 'Red Loam / Light Sandy Soil',
+      te: 'ఎర్ర నేల లేదా తేలికపాటి నేల',
+      hi: 'लाल दोमट / हल्की रेतीली मिट्टी',
+    },
+  },
+];
+
+
 // ==========================================
 // 1. HOME SCREEN (Simple, Consumer-Friendly)
 // ==========================================
@@ -1104,6 +1204,18 @@ export function SettingsPage() {
   const [scenarioRain, setScenarioRain] = useState('48');
   const [showCustomCoords, setShowCustomCoords] = useState(false);
 
+  // Informational Crop Type & Assumed Soil Type (input only, no effect on calculations)
+  const [selectedCrop, setSelectedCrop] = useState<string>(() => {
+    try {
+      return localStorage.getItem('aquawise_crop_type') || 'cotton';
+    } catch {
+      return 'cotton';
+    }
+  });
+
+  const activeCrop = CROPS.find((c) => c.id === selectedCrop) || CROPS[0];
+  const assumedSoilText = activeCrop ? activeCrop.soilTypes[l] || activeCrop.soilTypes.en : '';
+
   const dryVal = Number(dry);
   const wetVal = Number(wet);
   const isCalibValid = dry !== '' && wet !== '' && dryVal >= 0 && wetVal <= 100 && dryVal < wetVal;
@@ -1444,6 +1556,47 @@ export function SettingsPage() {
             </div>
 
             <form onSubmit={handleCalibSubmit} data-testid="form-calibration">
+              {/* Crop Type & Assumed Soil Type (Informational input) */}
+              <div className="form-fields-grid" style={{ marginBottom: 16 }}>
+                <div className="form-control">
+                  <label htmlFor="crop-type">{tx(l, 'cropType')}</label>
+                  <select
+                    id="crop-type"
+                    value={selectedCrop}
+                    onChange={(e) => {
+                      setSelectedCrop(e.target.value);
+                      try {
+                        localStorage.setItem('aquawise_crop_type', e.target.value);
+                      } catch {
+                        // ignore storage errors
+                      }
+                    }}
+                    data-testid="select-crop-type"
+                  >
+                    {CROPS.map((crop) => (
+                      <option key={crop.id} value={crop.id}>
+                        {crop.labels[l] || crop.labels.en}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label htmlFor="assumed-soil-type">{tx(l, 'assumedSoilType')}</label>
+                  <input
+                    id="assumed-soil-type"
+                    type="text"
+                    readOnly
+                    value={assumedSoilText}
+                    data-testid="input-assumed-soil-type"
+                    style={{ backgroundColor: 'var(--surface-muted, #f8fafc)', cursor: 'default' }}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--text-subtle, #64748b)', marginTop: 4 }}>
+                    {tx(l, 'soilAssumptionNote')}
+                  </span>
+                </div>
+              </div>
+
               <div className="form-fields-grid">
                 <div className="form-control">
                   <label htmlFor="dry-point">{tx(l, 'dry')} (%)</label>

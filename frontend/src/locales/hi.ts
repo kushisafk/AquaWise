@@ -56,6 +56,8 @@ const page = {
   scenarioAdequate: '4. पर्याप्त नमी', scenarioDryLater: '5. बाद में सूख सकती है', scenarioWeatherStale: '6. पुराना मौसम',
   scenarioWeatherUnavailable: '7. मौसम उपलब्ध नहीं', scenarioSensorFault: '8. सेंसर त्रुटि',
   scenarioActiveWatering: '9. सिंचाई जारी है', scenarioTargetReached: '10. लक्ष्य नमी पूरी हुई',
+  cropType: 'फसल का प्रकार', cropSelectPlaceholder: 'फसल चुनें...', assumedSoilType: 'अनुमानित मिट्टी का प्रकार',
+  soilAssumptionNote: 'फसल के प्रकार से अनुमानित (केवल जानकारी के लिए)',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

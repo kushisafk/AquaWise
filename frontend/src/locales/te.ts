@@ -56,6 +56,8 @@ const page = {
   scenarioAdequate: '4. తగినంత తేమ', scenarioDryLater: '5. తర్వాత ఎండే అవకాశం', scenarioWeatherStale: '6. పాత వాతావరణం',
   scenarioWeatherUnavailable: '7. వాతావరణం లేదు', scenarioSensorFault: '8. సెన్సార్ లోపం',
   scenarioActiveWatering: '9. నీరు పారుతోంది', scenarioTargetReached: '10. లక్ష్య తేమ చేరింది',
+  cropType: 'పంట రకం', cropSelectPlaceholder: 'పంటను ఎంచుకోండి...', assumedSoilType: 'అంచనా వేసిన నేల రకం',
+  soilAssumptionNote: 'పంట రకం ఆధారంగా అంచనా వేయబడింది (సమాచారం కోసం మాత్రమే)',
 } as const;
 
 const dictionary = { ...common, ...page } as const;
