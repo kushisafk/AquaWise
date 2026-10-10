@@ -13,6 +13,7 @@ import en from '@/locales/en';
 import te from '@/locales/te';
 import hi from '@/locales/hi';
 import { useAquaWise, tr } from '@/App';
+import { WebPushSettings } from '@/components/web-push-settings';
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock, CloudLightning, CloudRain, CloudSun,
   Droplet, Droplets, Gauge, History, Info, Leaf, LoaderCircle, RefreshCw,
@@ -259,7 +260,7 @@ export function DashboardPage() {
 
   // Idle / Schedule Evaluation Timer Calculation
   const nextEvalIso = (state as any)?.schedule?.nextEvaluationTime
-    || recommendation?.nextCheckTime
+    || (recommendation as any)?.nextCheckTime
     || (state as any)?.schedule?.recommendedStartTime;
 
   const nextEvalMs = nextEvalIso ? new Date(nextEvalIso).getTime() : 0;
@@ -1607,6 +1608,8 @@ export function SettingsPage() {
                   data-testid="toggle-notifications"
                 />
               </div>
+
+              {form.notificationsEnabled && <WebPushSettings />}
             </div>
 
             <div className="section-separator" />

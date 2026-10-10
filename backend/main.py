@@ -41,6 +41,14 @@ from forecasting import (
 )
 
 from weather import fetch_open_meteo, get_weather
+from push import (
+    get_vapid_public_key,
+    init_push_db,
+    is_push_configured,
+    register_subscription,
+    send_web_push,
+    unregister_subscription,
+)
 
 API_PREFIX = "/api"
 
@@ -61,8 +69,11 @@ def _weather_from_open_meteo(latitude: float, longitude: float) -> dict:
     import json
     from datetime import datetime, timezone
     
-    API_KEY = "AIzaSyDBLRANvsoLcpTyBKuib510TZ2ss3CjRs4"
-    google_url = f"https://weather.googleapis.com/v1/forecast/hours:lookup?location.latitude={latitude}&location.longitude={longitude}&key={API_KEY}"
+    api_key = os.environ.get("GOOGLE_WEATHER_API_KEY")
+    if not api_key:
+        return fetch_open_meteo(latitude, longitude)
+    
+    google_url = f"https://weather.googleapis.com/v1/forecast/hours:lookup?location.latitude={latitude}&location.longitude={longitude}&key={api_key}"
     
     try:
         req = urllib.request.Request(google_url, headers={'User-Agent': 'AquaWise'})
@@ -263,10 +274,22 @@ class TestScenarioInput(BaseModel):
     scenarioKey: str | None = None
 
 class FeedbackInput(BaseModel):
-
     helpful: bool
-
     comment: str = Field(max_length=1000)
+
+class PushKeysInput(BaseModel):
+    p256dh: str
+    auth: str
+
+class PushSubscriptionInput(BaseModel):
+    endpoint: str
+    keys: PushKeysInput
+    userAgent: str | None = None
+    deviceToken: str | None = None
+
+class PushUnsubscribeInput(BaseModel):
+    endpoint: str
+    deviceToken: str | None = None
 
 @contextmanager
 
@@ -425,18 +448,14 @@ def _init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS feedback (
-
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-
                 helpful INTEGER NOT NULL,
-
                 comment TEXT NOT NULL,
-
                 created_at TEXT NOT NULL
-
             );
-
         """)
+
+        init_push_db(db)
 
         for key, value in DEFAULT_SETTINGS.items():
 
@@ -570,25 +589,32 @@ def add_history(
 
     return int(cursor.lastrowid)
 
-def add_notification(db: sqlite3.Connection, title: str, detail: str) -> None:
-
+def add_notification(db: sqlite3.Connection, title: str, detail: str) -> dict | None:
     exists = db.execute(
-
         "SELECT 1 FROM notifications WHERE title = ? AND detail = ? AND created_at > ?",
-
         (title, detail, iso(now_utc() - timedelta(hours=2))),
-
     ).fetchone()
-
     if not exists:
-
-        db.execute(
-
+        created_at = iso()
+        cursor = db.execute(
             "INSERT INTO notifications(title, detail, acknowledged, created_at) VALUES (?, ?, 0, ?)",
-
-            (title, detail, iso()),
-
+            (title, detail, created_at),
         )
+        record = {
+            "id": int(cursor.lastrowid),
+            "title": title,
+            "detail": detail,
+            "acknowledged": False,
+            "at": created_at,
+        }
+        try:
+            settings = read_settings(db)
+            if settings.get("notificationsEnabled", True):
+                send_web_push(db, record)
+        except Exception as exc:
+            print(f"[AquaWise Push] Push dispatch failed: {exc}")
+        return record
+    return None
 
 def session_dict(db: sqlite3.Connection) -> dict:
 
@@ -1016,27 +1042,39 @@ def _field_state(db: sqlite3.Connection) -> dict:
 
     ).fetchone()
 
-    if not last_decision or last_decision["title"] != recommendation["status"]:
-
-        add_history(
-
-            db, "recommendation", recommendation["status"], recommendation["reason"],
-
-            recommendation["provenance"],
-
+    low_thresh = calibration.get("lowThreshold")
+    if low_thresh is None:
+        low_thresh = calibration.get("dryPoint", 20.0) + 0.25 * (calibration.get("wetPoint", 70.0) - calibration.get("dryPoint", 20.0))
+    if measured_moisture is not None and measured_moisture <= low_thresh and not fault:
+        add_notification(
+            db,
+            "Low soil moisture alert",
+            f"Soil moisture at {measured_moisture:.1f}% is below refill threshold ({low_thresh:.1f}%). Attention needed.",
         )
 
+    if not last_decision or last_decision["title"] != recommendation["status"]:
+        add_history(
+            db, "recommendation", recommendation["status"], recommendation["reason"],
+            recommendation["provenance"],
+        )
         if recommendation["status"] == "WATER NOW":
-
             add_notification(db, "Watering recommended", recommendation["reason"])
+        elif recommendation["status"] == "WAIT":
+            if "rain" in recommendation["reason"].lower():
+                add_notification(db, "Irrigation delayed by rain", recommendation["reason"])
+            elif last_decision and last_decision["title"] == "WATER NOW":
+                add_notification(db, "Recommendation updated: Wait", recommendation["reason"])
+        elif recommendation["status"] == "CHECK FIELD":
+            add_notification(db, "Check field sensor", recommendation["reason"])
 
-    if weather_info.get("stale"):
-
-        add_notification(db, "Weather data is stale", "Open-Meteo is unavailable or the cached forecast is old.")
+    if weather_info.get("stale") or weather_info.get("status") in ("STALE", "UNAVAILABLE"):
+        status_label = "unavailable" if weather_info.get("status") == "UNAVAILABLE" else "stale"
+        add_notification(db, f"Weather data is {status_label}", f"Weather service is {status_label}; exercise caution with irrigation planning.")
 
     if fault:
-
         add_notification(db, "Simulated sensor fault", "Check field sensor; displayed estimates are labelled.")
+    elif measured_moisture is None:
+        add_notification(db, "Sensor reading unavailable", "Check field sensor; reading could not be obtained.")
 
     # Phase 6: Automatic mode handling
 
@@ -1846,14 +1884,75 @@ def submit_feedback(payload: FeedbackInput):
             "SELECT id, category, title, detail, source, created_at FROM history WHERE id = ?",
 
             (event_id,),
-
         ).fetchone()
 
         return {
-
             "id": int(row["id"]), "category": row["category"], "title": row["title"],
-
             "detail": row["detail"], "source": row["source"], "at": row["created_at"],
-
         }
+
+
+@app.get(f"{API_PREFIX}/push/vapid-public-key")
+def get_vapid_key_endpoint():
+    pub_key = get_vapid_public_key()
+    return {
+        "publicKey": pub_key,
+        "enabled": bool(pub_key and is_push_configured()),
+    }
+
+
+@app.post(f"{API_PREFIX}/push/subscribe")
+def subscribe_push_endpoint(payload: PushSubscriptionInput):
+    with DB_LOCK, connect_db() as db:
+        try:
+            result = register_subscription(
+                db,
+                endpoint=payload.endpoint,
+                p256dh=payload.keys.p256dh,
+                auth=payload.keys.auth,
+                user_agent=payload.userAgent,
+                device_token=payload.deviceToken,
+            )
+            return result
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+
+
+@app.post(f"{API_PREFIX}/push/unsubscribe")
+def unsubscribe_push_endpoint(payload: PushUnsubscribeInput):
+    with DB_LOCK, connect_db() as db:
+        try:
+            success = unregister_subscription(
+                db,
+                endpoint=payload.endpoint,
+                device_token=payload.deviceToken,
+            )
+            return {"status": "unsubscribed" if success else "not_found"}
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+
+
+@app.post(f"{API_PREFIX}/push/test")
+def test_push_endpoint():
+    with DB_LOCK, connect_db() as db:
+        record = add_notification(
+            db,
+            "AquaWise Push Test",
+            "Web Push delivery verified for this device.",
+        )
+        if not record:
+            created_at = iso()
+            cursor = db.execute(
+                "INSERT INTO notifications(title, detail, acknowledged, created_at) VALUES (?, ?, 0, ?)",
+                ("AquaWise Push Test", f"Web Push delivery verified at {created_at}.", created_at),
+            )
+            record = {
+                "id": int(cursor.lastrowid),
+                "title": "AquaWise Push Test",
+                "detail": f"Web Push delivery verified at {created_at}.",
+                "acknowledged": False,
+                "at": created_at,
+            }
+            send_web_push(db, record)
+        return {"status": "sent", "notification": record}
 

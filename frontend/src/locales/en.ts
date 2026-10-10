@@ -78,6 +78,19 @@ const page = {
   nextAdvisoryCheckTimer: 'Next check',
   autoSessionTag: 'AUTOMATIC CYCLE',
   manualSessionTag: 'MANUAL SESSION',
+  pushNotifications: 'Browser push notifications',
+  pushNotificationsHelp: 'Receive real-time field alerts even when AquaWise is in the background.',
+  pushSubscribed: 'Active on this device',
+  pushNotSubscribed: 'Inactive on this device',
+  pushBlocked: 'Blocked by browser',
+  pushUnsupported: 'Not supported by browser',
+  enablePush: 'Enable on this device',
+  disablePush: 'Disable on this device',
+  testPush: 'Send test alert',
+  testingPush: 'Sending...',
+  pushTestSuccess: 'Test alert sent! Check your notification tray.',
+  pushBlockedTip: 'Notifications are blocked. Please allow notifications in your browser site settings.',
+  pushMissingKey: 'VAPID public key is not configured on the server.',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

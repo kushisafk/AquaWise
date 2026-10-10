@@ -324,6 +324,38 @@ export interface FeedbackInput {
   comment: string;
 }
 
+export interface VapidPublicKeyResponse {
+  publicKey?: string | null;
+  enabled: boolean;
+}
+
+export interface PushSubscriptionKeys {
+  p256dh: string;
+  auth: string;
+}
+
+export interface PushSubscriptionInput {
+  endpoint: string;
+  keys: PushSubscriptionKeys;
+  userAgent?: string;
+  deviceToken?: string;
+}
+
+export interface PushSubscriptionResponse {
+  status: string;
+  endpoint: string;
+  deviceToken: string;
+}
+
+export interface PushUnsubscribeInput {
+  endpoint: string;
+  deviceToken?: string;
+}
+
+export interface PushUnsubscribeResponse {
+  status: string;
+}
+
 export type GetHistoryParams = {
 category?: GetHistoryCategory;
 /**

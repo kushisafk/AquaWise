@@ -292,6 +292,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HistoryEvent"
+  /push/vapid-public-key:
+    get:
+      operationId: getVapidPublicKey
+      tags: [push]
+      summary: Retrieve the VAPID public key for Web Push subscription
+      responses:
+        "200":
+          description: VAPID public key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VapidPublicKeyResponse"
+  /push/subscribe:
+    post:
+      operationId: subscribePush
+      tags: [push]
+      summary: Register a browser Web Push subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscriptionInput"
+      responses:
+        "200":
+          description: Subscription registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushSubscriptionResponse"
+  /push/unsubscribe:
+    post:
+      operationId: unsubscribePush
+      tags: [push]
+      summary: Remove a browser Web Push subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushUnsubscribeInput"
+      responses:
+        "200":
+          description: Unsubscribed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushUnsubscribeResponse"
 components:
   schemas:
     HealthStatus:
@@ -498,3 +546,42 @@ components:
         helpful: { type: boolean }
         comment: { type: string, maxLength: 1000 }
       required: [helpful, comment]
+    VapidPublicKeyResponse:
+      type: object
+      properties:
+        publicKey: { type: string, nullable: true }
+        enabled: { type: boolean }
+      required: [enabled]
+    PushSubscriptionKeys:
+      type: object
+      properties:
+        p256dh: { type: string }
+        auth: { type: string }
+      required: [p256dh, auth]
+    PushSubscriptionInput:
+      type: object
+      properties:
+        endpoint: { type: string }
+        keys:
+          $ref: "#/components/schemas/PushSubscriptionKeys"
+        userAgent: { type: string }
+        deviceToken: { type: string }
+      required: [endpoint, keys]
+    PushSubscriptionResponse:
+      type: object
+      properties:
+        status: { type: string }
+        endpoint: { type: string }
+        deviceToken: { type: string }
+      required: [status, endpoint, deviceToken]
+    PushUnsubscribeInput:
+      type: object
+      properties:
+        endpoint: { type: string }
+        deviceToken: { type: string }
+      required: [endpoint]
+    PushUnsubscribeResponse:
+      type: object
+      properties:
+        status: { type: string }
+      required: [status]

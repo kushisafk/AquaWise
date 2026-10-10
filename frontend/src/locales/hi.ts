@@ -78,6 +78,19 @@ const page = {
   nextAdvisoryCheckTimer: 'अगली जांच',
   autoSessionTag: 'स्वचालित चक्र (AUTO)',
   manualSessionTag: 'मैन्युअल सत्र (MANUAL)',
+  pushNotifications: 'ब्राउज़र पुश सूचनाएं (Push notifications)',
+  pushNotificationsHelp: 'ऐप बंद होने पर भी अपने फोन पर रीयल-टाइम अलर्ट प्राप्त करें।',
+  pushSubscribed: 'इस डिवाइस पर सक्रिय',
+  pushNotSubscribed: 'सक्रिय नहीं है',
+  pushBlocked: 'ब्राउज़र द्वारा अवरुद्ध',
+  pushUnsupported: 'ब्राउज़र समर्थित नहीं है',
+  enablePush: 'इस डिवाइस पर चालू करें',
+  disablePush: 'बंद करें',
+  testPush: 'परीक्षण अलर्ट भेजें',
+  testingPush: 'भेज रहा है...',
+  pushTestSuccess: 'परीक्षण अलर्ट भेजा गया! अपनी सूचनाएं जांचें।',
+  pushBlockedTip: 'सूचनाएं अवरुद्ध हैं। कृपया ब्राउज़र सेटिंग्स में अनुमति दें।',
+  pushMissingKey: 'सर्वर पर VAPID सार्वजनिक कुंजी कॉन्फ़िगर नहीं है।',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

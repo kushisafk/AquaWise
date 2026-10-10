@@ -112,3 +112,72 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
+// ============================================================
+// WEB PUSH NOTIFICATIONS
+// ============================================================
+
+self.addEventListener("push", (event) => {
+  let data = {
+    title: "AquaWise Alert",
+    body: "New field update available.",
+    url: "/",
+  };
+
+  if (event.data) {
+    try {
+      data = { ...data, ...event.data.json() };
+    } catch {
+      data.body = event.data.text();
+    }
+  }
+
+  const notificationId = data.id || data.notificationId;
+  const targetUrl = data.url || (notificationId ? `/?notificationId=${notificationId}` : "/");
+
+  const options = {
+    body: data.body || data.detail || "Field telemetry or recommendation updated.",
+    icon: "/icons/aquawise-192.png",
+    badge: "/favicon.svg",
+    tag: data.tag || (notificationId ? `aquawise-notif-${notificationId}` : "aquawise-alert"),
+    data: {
+      url: targetUrl,
+      notificationId: notificationId,
+      title: data.title,
+      detail: data.detail || data.body,
+      at: data.at,
+    },
+    renotify: true,
+  };
+
+  event.waitUntil(self.registration.showNotification(data.title || "AquaWise Alert", options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const notifData = event.notification.data || {};
+  const targetUrl = notifData.url || "/";
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      // If a window is already open, focus it and navigate / post message
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          client.postMessage({
+            type: "aquawise-notification-click",
+            notificationId: notifData.notificationId,
+            url: targetUrl,
+          });
+          if ("navigate" in client) {
+            client.navigate(targetUrl);
+          }
+          return client.focus();
+        }
+      }
+      // Otherwise open a new window
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});

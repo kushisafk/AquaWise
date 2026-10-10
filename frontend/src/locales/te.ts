@@ -78,6 +78,19 @@ const page = {
   nextAdvisoryCheckTimer: 'తదుపరి తనిఖీ',
   autoSessionTag: 'ఆటోమేటిక్ సైకిల్ (AUTO)',
   manualSessionTag: 'మాన్యువల్ సెషన్ (MANUAL)',
+  pushNotifications: 'బ్రౌజర్ పుష్ నోటిఫికేషన్‌లు (Push notifications)',
+  pushNotificationsHelp: 'యాప్ మూసివేసినప్పటికీ మీ ఫోన్‌కు నిజ-సమయ హెచ్చరికలను అందుకోండి.',
+  pushSubscribed: 'ఈ పరికరంలో ప్రారంభించబడింది',
+  pushNotSubscribed: 'ప్రారంభించబడలేదు',
+  pushBlocked: 'బ్రౌజర్ అనుమతి నిరోధించబడింది',
+  pushUnsupported: 'బ్రౌజర్ మద్దతు లేదు',
+  enablePush: 'ఈ పరికరంలో ప్రారంభించండి',
+  disablePush: 'ఆపివేయండి',
+  testPush: 'పరీక్ష హెచ్చరికను పంపండి',
+  testingPush: 'పంపుతోంది...',
+  pushTestSuccess: 'పరీక్ష హెచ్చరిక పంపబడింది! మీ నోటిఫికేషన్‌లను తనిఖీ చేయండి.',
+  pushBlockedTip: 'నోటిఫికేషన్‌లు నిరోధించబడ్డాయి. బ్రౌజర్ సెట్టింగ్‌లలో అనుమతించండి.',
+  pushMissingKey: 'సర్వర్‌లో VAPID పబ్లిక్ కీ కాన్ఫిగర్ చేయబడలేదు.',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

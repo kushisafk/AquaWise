@@ -32,24 +32,46 @@ function AppShell({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState('');
   const [stale, setStale] = useState(!navigator.onLine);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [highlightedNotifId, setHighlightedNotifId] = useState<number | null>(null);
   const [path] = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const notifIdStr = params.get('notificationId');
+    if (notifIdStr) {
+      const id = parseInt(notifIdStr, 10);
+      if (!isNaN(id)) {
+        setHighlightedNotifId(id);
+        setAlertsOpen(true);
+      }
+    }
+  }, [path]);
+
   const settings = useGetSettings({ query: { queryKey: getGetSettingsQueryKey(), refetchInterval: 60_000 } });
   const field = useGetFieldState({ query: { queryKey: getGetFieldStateQueryKey(), refetchInterval: 30_000 } });
   const notifications = useGetNotifications({ query: { queryKey: getGetNotificationsQueryKey(), refetchInterval: 45_000 } });
   const acknowledge = useAcknowledgeNotification();
   const unread = notifications.data?.filter((item) => !item.acknowledged) || [];
+
   useEffect(() => {
     if (settings.data?.language) {
       setLang(settings.data.language);
       document.documentElement.lang = settings.data.language;
     }
   }, [settings.data?.language]);
+
   useEffect(() => {
     const onOffline = () => setStale(true);
     const onOnline = () => setStale(false);
-    const onServiceWorkerMessage = (event: MessageEvent<{ type?: string }>) => {
+    const onServiceWorkerMessage = (event: MessageEvent<{ type?: string; notificationId?: number }>) => {
       if (event.data?.type === 'aquawise-stale-response') setStale(true);
       if (event.data?.type === 'aquawise-fresh-response') setStale(false);
+      if (event.data?.type === 'aquawise-notification-click') {
+        if (event.data.notificationId) {
+          setHighlightedNotifId(Number(event.data.notificationId));
+        }
+        setAlertsOpen(true);
+      }
     };
     window.addEventListener('offline', onOffline);
     window.addEventListener('online', onOnline);
@@ -103,7 +125,7 @@ function AppShell({ children }: { children: ReactNode }) {
           </header>
           {alertsOpen && <section className="alerts-popover" aria-label={tr(lang, 'alertTitle')}>
             <div className="section-title" style={{ marginBottom: 5 }}><span>{tr(lang, 'alertTitle')}</span><button className="text-button" onClick={() => setAlertsOpen(false)}>×</button></div>
-            {notifications.isLoading ? <div className="skeleton" style={{ height: 56 }} /> : notifications.isError ? <div className="subtle">{tr(lang, 'retry')}</div> : unread.length === 0 ? <div className="subtle">{tr(lang, 'noAlerts')}</div> : unread.map((item) => <article className="mini-alert" key={item.id}>
+            {notifications.isLoading ? <div className="skeleton" style={{ height: 56 }} /> : notifications.isError ? <div className="subtle">{tr(lang, 'retry')}</div> : unread.length === 0 ? <div className="subtle">{tr(lang, 'noAlerts')}</div> : unread.map((item) => <article className={`mini-alert ${item.id === highlightedNotifId ? 'highlighted' : ''}`} key={item.id}>
               <Bell size={16} /><div style={{ flex: 1 }}><div className="mini-alert-title">{item.title}</div><div className="mini-alert-detail">{item.detail}</div><button className="text-button" disabled={acknowledge.isPending} onClick={() => acknowledge.mutate({ notificationId: item.id }, { onSuccess: () => { void queryClient.invalidateQueries({ queryKey: getGetNotificationsQueryKey() }); notify(tr(lang, 'acknowledge')); }, onError: () => notify('Could not update alert. Please retry.') })}>{tr(lang, 'acknowledge')}</button></div>
             </article>)}
           </section>}

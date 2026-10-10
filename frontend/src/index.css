@@ -334,6 +334,13 @@ button, a {
   gap: 10px;
   margin-top: 10px;
   border: 1px solid var(--border-soft);
+  transition: all 0.2s ease;
+}
+
+.mini-alert.highlighted {
+  border-color: var(--color-primary);
+  background: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(27, 67, 50, 0.15);
 }
 
 .mini-alert-title {

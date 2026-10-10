@@ -495,3 +495,45 @@ export const SubmitFeedbackResponse = zod.object({
 })
 
 
+/**
+ * @summary Retrieve the VAPID public key for Web Push subscription
+ */
+export const GetVapidPublicKeyResponse = zod.object({
+  "publicKey": zod.string().nullish(),
+  "enabled": zod.boolean()
+})
+
+
+/**
+ * @summary Register a browser Web Push subscription
+ */
+export const SubscribePushBody = zod.object({
+  "endpoint": zod.string(),
+  "keys": zod.object({
+  "p256dh": zod.string(),
+  "auth": zod.string()
+}),
+  "userAgent": zod.string().optional(),
+  "deviceToken": zod.string().optional()
+})
+
+export const SubscribePushResponse = zod.object({
+  "status": zod.string(),
+  "endpoint": zod.string(),
+  "deviceToken": zod.string()
+})
+
+
+/**
+ * @summary Remove a browser Web Push subscription
+ */
+export const UnsubscribePushBody = zod.object({
+  "endpoint": zod.string(),
+  "deviceToken": zod.string().optional()
+})
+
+export const UnsubscribePushResponse = zod.object({
+  "status": zod.string()
+})
+
+
