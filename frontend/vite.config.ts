@@ -15,11 +15,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),
-      'react': path.resolve(import.meta.dirname, 'node_modules/react'),
-      'react-dom': path.resolve(import.meta.dirname, 'node_modules/react-dom'),
-      '@tanstack/react-query': path.resolve(import.meta.dirname, 'node_modules/@tanstack/react-query'),
     },
-    dedupe: ['react', 'react-dom', '@tanstack/react-query'],
+    dedupe: ['react', 'react-dom'],
   },
   root: path.resolve(import.meta.dirname),
   build: {

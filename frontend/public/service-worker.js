@@ -77,6 +77,18 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/events")) return;
 
+  // Never intercept or cache localhost dev assets, Vite internals, or source files
+  if (
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.pathname.startsWith("/@") ||
+    url.pathname.includes("/node_modules/") ||
+    url.pathname.endsWith(".tsx") ||
+    url.pathname.endsWith(".ts")
+  ) {
+    return;
+  }
+
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(networkFirst(request, API_CACHE, undefined, true));
     return;

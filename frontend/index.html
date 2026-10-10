@@ -29,11 +29,22 @@
     <div id="root"></div>
     <script>
       if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker.register("/service-worker.js").catch(() => {
-            window.dispatchEvent(new Event("aquawise:service-worker-unavailable"));
+        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (const r of registrations) r.unregister();
           });
-        });
+          if (window.caches) {
+            caches.keys().then((keys) => {
+              for (const k of keys) caches.delete(k);
+            });
+          }
+        } else {
+          window.addEventListener("load", () => {
+            navigator.serviceWorker.register("/service-worker.js").catch(() => {
+              window.dispatchEvent(new Event("aquawise:service-worker-unavailable"));
+            });
+          });
+        }
       }
     </script>
     <script type="module" src="/src/main.tsx"></script>

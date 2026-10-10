@@ -104,6 +104,7 @@ function localizedStrategy(name: string, lang: 'en' | 'te' | 'hi') {
 }
 
 const LOCATION_PRESETS = [
+  { label: 'Nirmal, Telangana', lat: 19.0775, lon: 78.4261 },
   { label: 'Vijayawada, Andhra Pradesh', lat: 16.5062, lon: 80.6480 },
   { label: 'Hyderabad, Telangana', lat: 17.3850, lon: 78.4867 },
   { label: 'Guntur, Andhra Pradesh', lat: 16.3067, lon: 80.4365 },
@@ -1124,6 +1125,10 @@ export function SettingsPage() {
     else updateSetting(key, Number(value) as never);
   };
 
+  const currentPresetIndex = form ? LOCATION_PRESETS.findIndex(
+    (p) => Math.abs(p.lat - form.latitude) < 0.01 && Math.abs(p.lon - form.longitude) < 0.01
+  ) : -1;
+
   const handlePresetSelect = (presetIndex: number) => {
     if (presetIndex < 0) {
       setShowCustomCoords(true);
@@ -1359,8 +1364,8 @@ export function SettingsPage() {
                 <label htmlFor="location-preset">{tx(l, 'locationPreset')}</label>
                 <select
                   id="location-preset"
+                  value={currentPresetIndex !== -1 ? currentPresetIndex : -1}
                   onChange={(e) => handlePresetSelect(Number(e.target.value))}
-                  defaultValue="0"
                   data-testid="select-location-preset"
                 >
                   {LOCATION_PRESETS.map((p, idx) => (

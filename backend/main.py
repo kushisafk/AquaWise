@@ -1,10 +1,6 @@
-﻿"""AquaWise API: simulated field state, dynamic irrigation scheduling and persisted controls."""
-
-
+"""AquaWise API: simulated field state, dynamic irrigation scheduling and persisted controls."""
 
 from __future__ import annotations
-
-
 
 import asyncio
 
@@ -26,15 +22,11 @@ from pathlib import Path
 
 from typing import Any, Literal
 
-
-
 from fastapi import FastAPI, HTTPException, Query, Request
 
 from pydantic import BaseModel, Field
 
 from starlette.responses import StreamingResponse
-
-
 
 from engine import calculate_recommendation, thresholds
 
@@ -50,8 +42,6 @@ from forecasting import (
 
 from weather import fetch_open_meteo, get_weather
 
-
-
 API_PREFIX = "/api"
 
 DB_PATH = Path(os.environ.get(
@@ -66,17 +56,9 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DB_LOCK = threading.RLock()
 
-
-
-
-
 def _weather_from_open_meteo(latitude: float, longitude: float) -> dict:
 
     return fetch_open_meteo(latitude, longitude)
-
-
-
-
 
 @asynccontextmanager
 
@@ -110,10 +92,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-
-
-
-
 app = FastAPI(
 
     title="AquaWise API",
@@ -129,8 +107,6 @@ app = FastAPI(
     lifespan=lifespan,
 
 )
-
-
 
 DEFAULT_SETTINGS = {
 
@@ -168,10 +144,6 @@ DEFAULT_SIMULATION = {
 
 }
 
-
-
-
-
 class SettingsInput(BaseModel):
 
     language: Literal["en", "te", "hi"]
@@ -194,27 +166,15 @@ class SettingsInput(BaseModel):
 
     longitude: float = Field(ge=-180, le=180)
 
-
-
-
-
 class CalibrationInput(BaseModel):
 
     dryPoint: float = Field(ge=0, le=100)
 
     wetPoint: float = Field(ge=0, le=100)
 
-
-
-
-
 class IrrigationStartInput(BaseModel):
 
     durationMinutes: int = Field(ge=1, le=240)
-
-
-
-
 
 class TestScenarioInput(BaseModel):
 
@@ -232,19 +192,11 @@ class TestScenarioInput(BaseModel):
 
     scenarioKey: str | None = None
 
-
-
-
-
 class FeedbackInput(BaseModel):
 
     helpful: bool
 
     comment: str = Field(max_length=1000)
-
-
-
-
 
 @contextmanager
 
@@ -274,25 +226,13 @@ def connect_db():
 
         connection.close()
 
-
-
-
-
 def now_utc() -> datetime:
 
     return datetime.now(timezone.utc)
 
-
-
-
-
 def iso(value: datetime | None = None) -> str:
 
     return (value or now_utc()).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-
-
 
 def parse_time(value: str | None) -> datetime | None:
 
@@ -307,10 +247,6 @@ def parse_time(value: str | None) -> datetime | None:
     except ValueError:
 
         return None
-
-
-
-
 
 def _init_db() -> None:
 
@@ -464,19 +400,11 @@ def _init_db() -> None:
 
         )
 
-
-
-
-
 def get_value(db: sqlite3.Connection, key: str, default=None):
 
     row = db.execute("SELECT value FROM app_values WHERE key = ?", (key,)).fetchone()
 
     return json.loads(row["value"]) if row else default
-
-
-
-
 
 def set_value(db: sqlite3.Connection, key: str, value) -> None:
 
@@ -490,10 +418,6 @@ def set_value(db: sqlite3.Connection, key: str, value) -> None:
 
     )
 
-
-
-
-
 def read_settings(db: sqlite3.Connection) -> dict:
 
     return {
@@ -503,10 +427,6 @@ def read_settings(db: sqlite3.Connection) -> dict:
         for key, fallback in DEFAULT_SETTINGS.items()
 
     }
-
-
-
-
 
 def read_calibration(db: sqlite3.Connection) -> dict:
 
@@ -534,10 +454,6 @@ def read_calibration(db: sqlite3.Connection) -> dict:
 
     }
 
-
-
-
-
 def _cleanup_duplicate_history(db: sqlite3.Connection) -> None:
 
     """Safely deduplicate routine simulated readings while preserving real events."""
@@ -559,10 +475,6 @@ def _cleanup_duplicate_history(db: sqlite3.Connection) -> None:
         )
 
     """)
-
-
-
-
 
 def add_history(
 
@@ -588,10 +500,6 @@ def add_history(
 
     return int(cursor.lastrowid)
 
-
-
-
-
 def add_notification(db: sqlite3.Connection, title: str, detail: str) -> None:
 
     exists = db.execute(
@@ -611,10 +519,6 @@ def add_notification(db: sqlite3.Connection, title: str, detail: str) -> None:
             (title, detail, iso()),
 
         )
-
-
-
-
 
 def session_dict(db: sqlite3.Connection) -> dict:
 
@@ -654,10 +558,6 @@ def session_dict(db: sqlite3.Connection) -> dict:
 
     }
 
-
-
-
-
 def _stop_session(db: sqlite3.Connection, row: sqlite3.Row, reason: str) -> None:
 
     if not row["active"]:
@@ -683,10 +583,6 @@ def _stop_session(db: sqlite3.Connection, row: sqlite3.Row, reason: str) -> None
     )
 
     add_notification(db, "Simulated watering stopped", reason)
-
-
-
-
 
 def _start_session(db: sqlite3.Connection, duration: int, source: str) -> dict:
 
@@ -730,10 +626,6 @@ def _start_session(db: sqlite3.Connection, duration: int, source: str) -> dict:
 
     return session_dict(db)
 
-
-
-
-
 def _effective_moisture(
 
     db: sqlite3.Connection,
@@ -764,8 +656,6 @@ def _effective_moisture(
 
         return float(simulation["moisture"]), "simulated", False
 
-
-
     last = db.execute(
 
         "SELECT soil_moisture, created_at FROM telemetry "
@@ -788,8 +678,6 @@ def _effective_moisture(
 
         return None, "stale", True
 
-
-
     temp = weather_info.get("temperatureC") or 26.0
 
     hum = weather_info.get("humidityPercent") or 60.0
@@ -800,10 +688,6 @@ def _effective_moisture(
 
     return round(estimate, 1), "estimated", True
 
-
-
-
-
 def _field_state(db: sqlite3.Connection) -> dict:
 
     settings = read_settings(db)
@@ -813,8 +697,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
     simulation = get_value(db, "simulation", DEFAULT_SIMULATION.copy())
 
     test_scenario = get_value(db, "test_scenario")
-
-
 
     # Fetch weather via dedicated weather service
 
@@ -831,8 +713,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
         test_scenario=test_scenario,
 
     )
-
-
 
     current = now_utc()
 
@@ -856,15 +736,11 @@ def _field_state(db: sqlite3.Connection) -> dict:
 
     ).fetchone()
 
-
-
     temp = weather_info.get("temperatureC") or 26.0
 
     hum = weather_info.get("humidityPercent") or 60.0
 
     evaporation = max(0.02, 0.06 + max(0, temp - 20) * 0.004 + 55 * 0.0012 - hum * 0.0008)
-
-
 
     # Deplete moisture naturally
 
@@ -873,8 +749,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
     if weather_info.get("rainingNow"):
 
         moisture += min(0.8, elapsed_minutes * 0.015)
-
-
 
     # Advance active irrigation session
 
@@ -916,8 +790,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
 
             active = None
 
-
-
     moisture = round(max(0.0, min(100.0, moisture)), 1)
 
     simulation["moisture"] = moisture
@@ -925,8 +797,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
     simulation["lastUpdated"] = iso(current)
 
     set_value(db, "simulation", simulation)
-
-
 
     measured_moisture, provenance, fault = _effective_moisture(
 
@@ -947,8 +817,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
         + min(15.0, (weather_info.get("precipitationMm6h") or 0.0) * 0.75),
 
     )
-
-
 
     # Recommendation via deterministic rules
 
@@ -992,8 +860,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
 
     recommendation["updatedAt"] = iso(current)
 
-
-
     # Dynamic Schedule generation
 
     schedule = generate_irrigation_schedule(
@@ -1016,11 +882,7 @@ def _field_state(db: sqlite3.Connection) -> dict:
 
     )
 
-
-
     session = session_dict(db)
-
-
 
     # Telemetry logging (rate-limited to 1 minute)
 
@@ -1074,8 +936,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
 
             )
 
-
-
     # History recommendation logging (avoid duplicate consecutive statuses)
 
     last_decision = db.execute(
@@ -1100,8 +960,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
 
             add_notification(db, "Watering recommended", recommendation["reason"])
 
-
-
     if weather_info.get("stale"):
 
         add_notification(db, "Weather data is stale", "Open-Meteo is unavailable or the cached forecast is old.")
@@ -1109,8 +967,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
     if fault:
 
         add_notification(db, "Simulated sensor fault", "Check field sensor; displayed estimates are labelled.")
-
-
 
     # Phase 6: Automatic mode handling
 
@@ -1137,8 +993,6 @@ def _field_state(db: sqlite3.Connection) -> dict:
         _start_session(db, min(recommendation["durationMinutes"], settings["maxDurationMinutes"]), "automatic")
 
         session = session_dict(db)
-
-
 
     return {
 
@@ -1180,19 +1034,11 @@ def _field_state(db: sqlite3.Connection) -> dict:
 
     }
 
-
-
-
-
 @app.get(f"{API_PREFIX}/healthz")
 
 def health_check():
 
     return {"status": "ok"}
-
-
-
-
 
 @app.get(f"{API_PREFIX}/events")
 
@@ -1214,8 +1060,6 @@ async def stream_field_events(request: Request):
 
             await asyncio.sleep(15)
 
-
-
     return StreamingResponse(
 
         events(),
@@ -1226,10 +1070,6 @@ async def stream_field_events(request: Request):
 
     )
 
-
-
-
-
 @app.get(f"{API_PREFIX}/field")
 
 def get_field_state():
@@ -1237,10 +1077,6 @@ def get_field_state():
     with DB_LOCK, connect_db() as db:
 
         return _field_state(db)
-
-
-
-
 
 @app.get(f"{API_PREFIX}/recommendation")
 
@@ -1250,10 +1086,6 @@ def get_recommendation():
 
         return _field_state(db)["recommendation"]
 
-
-
-
-
 @app.get(f"{API_PREFIX}/schedule")
 
 def get_schedule():
@@ -1261,10 +1093,6 @@ def get_schedule():
     with DB_LOCK, connect_db() as db:
 
         return _field_state(db)["schedule"]
-
-
-
-
 
 @app.get(f"{API_PREFIX}/weather")
 
@@ -1287,10 +1115,6 @@ def get_weather_route():
             test_scenario=get_value(db, "test_scenario"),
 
         )
-
-
-
-
 
 @app.get(f"{API_PREFIX}/analytics")
 
@@ -1316,15 +1140,11 @@ def get_analytics():
 
         } for row in reversed(telemetry)]
 
-
-
         moisture = field["telemetry"]["soilMoisture"]
 
         if moisture is None:
 
             moisture = float(get_value(db, "simulation", DEFAULT_SIMULATION)["moisture"])
-
-
 
         temp = field["telemetry"]["temperatureC"] or 26.0
 
@@ -1337,8 +1157,6 @@ def get_analytics():
         rain = field["weather"].get("precipitationMm6h") or 0.0
 
         irr_duration = field["irrigation"]["durationMinutes"] if field["irrigation"]["active"] else 0
-
-
 
         # Run non-ML physical simulation using real hourly forecast if available
 
@@ -1375,10 +1193,6 @@ def get_analytics():
             "forecastLabel": label,
 
         }
-
-
-
-
 
 @app.get(f"{API_PREFIX}/history")
 
@@ -1440,10 +1254,6 @@ def get_history(
 
         } for row in rows]
 
-
-
-
-
 @app.get(f"{API_PREFIX}/settings")
 
 def get_settings():
@@ -1451,10 +1261,6 @@ def get_settings():
     with connect_db() as db:
 
         return read_settings(db)
-
-
-
-
 
 @app.put(f"{API_PREFIX}/settings")
 
@@ -1478,37 +1284,21 @@ def update_settings(payload: SettingsInput):
 
             set_value(db, "test_scenario", None)
 
-
-
-        # If location coordinates changed, refresh weather immediately
-
+        # If location coordinates changed, refresh weather immediately with live data
         if (
-
             abs(previous["latitude"] - incoming["latitude"]) > 0.001
-
             or abs(previous["longitude"] - incoming["longitude"]) > 0.001
-
         ):
-
+            set_value(db, "test_scenario", None)
             get_weather(
-
                 db, incoming["latitude"], incoming["longitude"],
-
-                test_mode=incoming["testMode"],
-
+                test_mode=False,
                 force_refresh=True,
-
             )
-
-
 
         add_history(db, "alert", "Settings updated", "Saved field and notification preferences.")
 
         return incoming
-
-
-
-
 
 @app.get(f"{API_PREFIX}/calibration")
 
@@ -1517,10 +1307,6 @@ def get_calibration():
     with connect_db() as db:
 
         return read_calibration(db)
-
-
-
-
 
 @app.put(f"{API_PREFIX}/calibration")
 
@@ -1552,10 +1338,6 @@ def update_calibration(payload: CalibrationInput):
 
         return result
 
-
-
-
-
 @app.post(f"{API_PREFIX}/irrigation/start")
 
 def start_irrigation(payload: IrrigationStartInput):
@@ -1567,10 +1349,6 @@ def start_irrigation(payload: IrrigationStartInput):
         duration = min(payload.durationMinutes, settings["maxDurationMinutes"])
 
         return _start_session(db, duration, "manual")
-
-
-
-
 
 @app.post(f"{API_PREFIX}/irrigation/stop")
 
@@ -1594,10 +1372,6 @@ def stop_irrigation():
 
         return session_dict(db)
 
-
-
-
-
 @app.post(f"{API_PREFIX}/test-scenario")
 
 def apply_test_scenario(payload: TestScenarioInput):
@@ -1611,8 +1385,6 @@ def apply_test_scenario(payload: TestScenarioInput):
         target = calibration["targetMoisture"]
 
         scenario_data = payload.model_dump()
-
-
 
         # Handle explicit scenario key presets (Phase 8: 10 scenarios)
 
@@ -1828,15 +1600,11 @@ def apply_test_scenario(payload: TestScenarioInput):
 
             }
 
-
-
         set_value(db, "setting:testMode", True)
 
         set_value(db, "test_scenario", scenario_data)
 
         set_value(db, "auto_override_until", None)
-
-
 
         simulation = get_value(db, "simulation", DEFAULT_SIMULATION.copy())
 
@@ -1847,8 +1615,6 @@ def apply_test_scenario(payload: TestScenarioInput):
             simulation["lastUpdated"] = iso()
 
             set_value(db, "simulation", simulation)
-
-
 
         add_history(
 
@@ -1861,10 +1627,6 @@ def apply_test_scenario(payload: TestScenarioInput):
         )
 
         return _field_state(db)
-
-
-
-
 
 @app.post(f"{API_PREFIX}/reset")
 
@@ -1908,10 +1670,6 @@ def reset_field():
 
         return _field_state(db)
 
-
-
-
-
 @app.get(f"{API_PREFIX}/notifications")
 
 def get_notifications():
@@ -1939,10 +1697,6 @@ def get_notifications():
             "at": row["created_at"],
 
         } for row in rows]
-
-
-
-
 
 @app.post(f"{API_PREFIX}/notifications/{{notification_id}}/acknowledge")
 
@@ -1977,10 +1731,6 @@ def acknowledge_notification(notification_id: int):
             "acknowledged": bool(row["acknowledged"]), "at": row["created_at"],
 
         }
-
-
-
-
 
 @app.post(f"{API_PREFIX}/feedback", status_code=201)
 
