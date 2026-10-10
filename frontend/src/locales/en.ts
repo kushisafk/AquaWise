@@ -68,6 +68,16 @@ const page = {
   sensorNoRain: 'No rain',
   sensorHumidityLabel: 'Field humidity',
   forecastRainVolume: 'Rain volume (6h)',
+  autoWateringOn: 'Automatic Watering: ON',
+  advisoryModeLabel: 'Advisory Mode (Manual confirmation)',
+  forceStopWatering: 'Force stop watering',
+  wateringTimerRemaining: 'Time remaining',
+  elapsedTime: 'Elapsed',
+  totalDuration: 'Total duration',
+  nextAutoCheckTimer: 'Next automatic check',
+  nextAdvisoryCheckTimer: 'Next check',
+  autoSessionTag: 'AUTOMATIC CYCLE',
+  manualSessionTag: 'MANUAL SESSION',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

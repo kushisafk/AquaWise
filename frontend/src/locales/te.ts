@@ -68,6 +68,16 @@ const page = {
   sensorNoRain: 'వర్షం లేదు',
   sensorHumidityLabel: 'పొలంలో తేమ',
   forecastRainVolume: 'వర్షం పరిమాణం (6 గంటలు)',
+  autoWateringOn: 'ఆటోమేటిక్ నీటి సరఫరా: ఆన్ (Auto: ON)',
+  advisoryModeLabel: 'సలహా మోడ్ (రైతు ఆమోదం అవసరం)',
+  forceStopWatering: 'నీటిని బలవంతంగా ఆపివేయండి (Force stop)',
+  wateringTimerRemaining: 'మిగిలి ఉన్న సమయం',
+  elapsedTime: 'పూర్తయిన సమయం',
+  totalDuration: 'మొత్తం సమయం',
+  nextAutoCheckTimer: 'తదుపరి ఆటోమేటిక్ తనిఖీ',
+  nextAdvisoryCheckTimer: 'తదుపరి తనిఖీ',
+  autoSessionTag: 'ఆటోమేటిక్ సైకిల్ (AUTO)',
+  manualSessionTag: 'మాన్యువల్ సెషన్ (MANUAL)',
 } as const;
 
 const dictionary = { ...common, ...page } as const;
