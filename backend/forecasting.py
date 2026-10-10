@@ -1,92 +1,134 @@
-"""Deterministic physical water-balance simulator and dynamic irrigation scheduler.
-
-Strict Non-ML Implementation:
-- Pure physical soil-moisture depletion and infiltration simulation
-- Penman-Monteith inspired drying rate driven by temperature, humidity, and solar radiation
-- Dynamic 48-hour forward projection and PRD checkpoint generation (+1h, +3h, +6h, +12h, +24h, +48h)
-- Dynamic schedule generation (start time, duration, litres, target moisture)
-- 4-strategy comparative evaluation under identical weather and flow-rate assumptions
-"""
+"""Synthetic-data forecast experiment with a transparent water-balance fallback."""
 
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta, timezone
+import random
 from typing import Any
 
-# Simulation constants
-WETTING_RATE_PER_MINUTE = 0.32  # % soil moisture increase per minute of standard watering
-MODEL_DESCRIPTION = "Deterministic water-balance simulator (Penman-Monteith evapotranspiration & infiltration physics)"
+_model: Any = None
+_model_status = "Water-balance simulator (synthetic assumptions)"
+_model_mae: float | None = None
 
 
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+def _drying_rate(temperature: float, humidity: float, sunlight: float) -> float:
+    return max(
+        0.025,
+        0.06 + max(0, temperature - 20) * 0.004
+        + sunlight * 0.0012 - humidity * 0.0008,
+    )
 
 
-def iso(value: datetime | None = None) -> str:
-    return (value or now_utc()).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def drying_rate(temperature: float, humidity: float, sunlight: float) -> float:
-    """Hourly soil moisture loss (%) from solar radiation, temperature, and atmospheric humidity."""
-    temp_factor = max(0.0, temperature - 20.0) * 0.004
-    sun_factor = max(0.0, sunlight) * 0.0012
-    hum_factor = max(0.0, humidity) * 0.0008
-    return max(0.025, 0.06 + temp_factor + sun_factor - hum_factor)
-
-
-def balance_step(
+def _balance(
     moisture: float,
     hours: float,
     temperature: float,
     humidity: float,
     sunlight: float,
     rain_mm: float,
-    irrigation_minutes: float = 0.0,
+    irrigation_minutes: float = 0,
 ) -> float:
-    """Single physical water-balance step with bounded moisture [0, 100]."""
-    depletion = drying_rate(temperature, humidity, sunlight) * hours
-    # Infiltration model: rain contributes ~0.75% moisture per mm up to 25% cap per event
-    rain_gain = min(25.0, max(0.0, rain_mm) * 0.75)
-    # Irrigation response
-    irrigation_gain = max(0.0, irrigation_minutes) * WETTING_RATE_PER_MINUTE
-    new_moisture = moisture - depletion + rain_gain + irrigation_gain
-    return max(0.0, min(100.0, new_moisture))
+    return max(
+        0.0,
+        min(
+            100.0,
+            moisture
+            - _drying_rate(temperature, humidity, sunlight) * hours
+            + min(25.0, rain_mm * 0.75)
+            + irrigation_minutes * 0.28,
+        ),
+    )
 
 
-def simulate_48h_timeline(
-    initial_moisture: float,
-    hourly_weather: list[dict[str, Any]],
-    scheduled_irrigation: dict[int, int] | None = None,
-) -> list[dict[str, Any]]:
-    """Simulate hour-by-hour soil moisture over a 48-hour timeline."""
-    scheduled = scheduled_irrigation or {}
-    timeline: list[dict[str, Any]] = []
-    current_moisture = max(0.0, min(100.0, float(initial_moisture)))
+def train_experimental_model() -> dict[str, Any]:
+    """Train only on generated sequences; promote only if better than persistence."""
+    global _model, _model_status, _model_mae
+    try:
+        import numpy as np
+        from sklearn.ensemble import GradientBoostingRegressor
+        from sklearn.metrics import mean_absolute_error
+        from sklearn.model_selection import train_test_split
 
-    for hour in range(48):
-        weather_hour = hourly_weather[hour] if hour < len(hourly_weather) else {}
-        temp = float(weather_hour.get("temperatureC", 26.0))
-        hum = float(weather_hour.get("humidityPercent", 60.0))
-        sun = round(max(5.0, min(100.0, 76.0 - (hum - 50.0) * 0.4)), 1)
-        rain = float(weather_hour.get("precipitationMm", 0.0))
-        irr_mins = float(scheduled.get(hour, 0))
+        rng = random.Random(92)
+        samples: list[list[float]] = []
+        targets: list[float] = []
+        persistence: list[float] = []
+        for _ in range(2200):
+            moisture = rng.uniform(10, 90)
+            horizon = rng.choice([1, 3, 6, 12, 24, 48])
+            temperature = rng.uniform(16, 42)
+            humidity = rng.uniform(20, 95)
+            sunlight = rng.uniform(5, 100)
+            rain_probability = rng.uniform(0, 100)
+            rain_mm = rng.uniform(0, 22) if rain_probability > 25 else 0
+            irrigation = rng.choice([0, 0, 0, 8, 15])
+            time_of_day = rng.uniform(0.0, 24.0)
+            time_since_last_irrigation = rng.uniform(0.0, 168.0)
+            
+            # Step 1: Feature Engineering - Time-Series Lags
+            actual_drying = _drying_rate(temperature, humidity, sunlight)
+            moisture_minus_1h = min(100.0, moisture + actual_drying + rng.gauss(0, 0.5))
+            temp_rolling_3h_avg = temperature + rng.gauss(0, 2.0)
+            drying_rate_per_hour = moisture_minus_1h - moisture
+            
+            # Step 5: Evapotranspiration (ET0) Engineered Feature
+            et_index = (temperature * (max(5, sunlight) / 100)) / max(1, humidity)
 
-        current_moisture = balance_step(
-            current_moisture, 1.0, temp, hum, sun, rain, irr_mins
+            target = _balance(
+                moisture, horizon, temperature, humidity, sunlight,
+                rain_mm * min(1, horizon / 6), irrigation,
+            ) + rng.gauss(0, 1.0)
+            target = max(0.0, min(100.0, target))
+            samples.append([
+                moisture, horizon, temperature, humidity, sunlight,
+                rain_probability, rain_mm, irrigation,
+                moisture_minus_1h, temp_rolling_3h_avg, drying_rate_per_hour, et_index,
+                time_of_day, time_since_last_irrigation
+            ])
+            targets.append(target)
+            persistence.append(moisture)
+
+        # Step 3: Time-Series Cross-Validation
+        # Do not shuffle time-series data!
+        from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+        # Keep temporal order by removing shuffle/random split (in a real DB scenario, order is vital)
+        split_idx = int(len(samples) * 0.75)
+        x_train, x_test = np.asarray(samples)[:split_idx], np.asarray(samples)[split_idx:]
+        y_train, y_test = np.asarray(targets)[:split_idx], np.asarray(targets)[split_idx:]
+        base_test = np.asarray(persistence)[split_idx:]
+        
+        # Step 2: Dynamic Hyperparameter Tuning
+        # Step 4: Upgrade to LightGBM-style Regressor (HistGradientBoostingRegressor)
+        # We use sklearn's native HistGradientBoostingRegressor which is heavily optimized for tabular data and handles non-linearities much better than the standard GBR.
+        from sklearn.ensemble import HistGradientBoostingRegressor
+        param_dist = {
+            'max_iter': [30, 50, 100, 150],
+            'max_depth': [2, 3, 4, 5, None],
+            'learning_rate': [0.01, 0.05, 0.1, 0.2]
+        }
+        base_model = HistGradientBoostingRegressor(random_state=17)
+        tscv = TimeSeriesSplit(n_splits=3)
+        search = RandomizedSearchCV(
+            base_model, param_distributions=param_dist, n_iter=8, 
+            scoring='neg_mean_absolute_error', cv=tscv, random_state=17, n_jobs=1
         )
+        search.fit(x_train, y_train)
+        candidate = search.best_estimator_
 
-        timeline.append({
-            "hour": hour + 1,
-            "moisturePercent": round(current_moisture, 1),
-            "temperatureC": temp,
-            "humidityPercent": hum,
-            "rainMm": rain,
-            "irrigationMinutes": irr_mins,
-            "provenance": "simulated",
-        })
-
-    return timeline
+        model_error = float(mean_absolute_error(y_test, candidate.predict(x_test)))
+        baseline_error = float(mean_absolute_error(y_test, base_test))
+        _model_mae = model_error
+        if model_error < baseline_error:
+            _model = candidate
+            _model_status = "Experimental tree model (trained on synthetic data)"
+        else:
+            _model = None
+            _model_status = "Persistence fallback (synthetic model did not beat baseline)"
+    except Exception:
+        _model = None
+        _model_mae = None
+        _model_status = "Water-balance simulator (model unavailable)"
+    return {"status": _model_status, "mae": _model_mae}
 
 
 def forecast_points(
@@ -96,181 +138,53 @@ def forecast_points(
     sunlight: float,
     rain_probability: float,
     rain_mm: float,
-    irrigation_minutes: float = 0.0,
+    irrigation_minutes: float = 0,
+    moisture_minus_1h: float | None = None,
+    temp_rolling_3h_avg: float | None = None,
+    time_of_day: float = 12.0,
+    time_since_last_irrigation: float = 24.0,
     hourly_weather: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
-    """Generate PRD checkpoint forecasts: +1h, +3h, +6h, +12h, +24h, +48h."""
-    checkpoints = [1, 3, 6, 12, 24, 48]
+    if _model is None and _model_status.startswith("Water-balance simulator"):
+        train_experimental_model()
+    
+    # Step 1: Compute real or fallback lag features
+    if moisture_minus_1h is None:
+        moisture_minus_1h = min(100.0, moisture + _drying_rate(temperature, humidity, sunlight))
+    if temp_rolling_3h_avg is None:
+        temp_rolling_3h_avg = temperature
+    drying_rate_per_hour = moisture_minus_1h - moisture
+    
+    # Step 5: Compute ET Index
+    et_index = (temperature * (max(5, sunlight) / 100)) / max(1, humidity)
+
+    horizons = [1, 3, 6, 12, 24, 48]
     points = []
-
-    if hourly_weather and len(hourly_weather) >= 48:
-        # Step through real hourly forecast data for high-fidelity simulation
-        cur = max(0.0, min(100.0, float(moisture)))
-        checkpoint_map = {}
-        for h in range(1, 49):
-            idx = h - 1
-            w = hourly_weather[idx]
-            t = float(w.get("temperatureC", temperature))
-            hm = float(w.get("humidityPercent", humidity))
-            s = round(max(5.0, min(100.0, 76.0 - (hm - 50.0) * 0.4)), 1)
-            r = float(w.get("precipitationMm", 0.0))
-            irr = irrigation_minutes if h == 1 else 0.0
-            cur = balance_step(cur, 1.0, t, hm, s, r, irr)
-            if h in checkpoints:
-                checkpoint_map[h] = round(cur, 1)
-
-        for hours in checkpoints:
-            points.append({
-                "hours": hours,
-                "moisturePercent": checkpoint_map.get(hours, round(cur, 1)),
-                "provenance": "estimated",
-            })
-    else:
-        # Fallback using environmental parameters
-        for hours in checkpoints:
-            effective_rain = rain_mm * min(1.0, hours / 6.0) if rain_probability >= 30 else 0.0
-            predicted = balance_step(
-                float(moisture), float(hours), temperature, humidity, sunlight,
-                effective_rain, irrigation_minutes,
+    for hours in horizons:
+        if _model is not None:
+            try:
+                predicted = float(_model.predict([[
+                    moisture, hours, temperature, humidity, sunlight,
+                    rain_probability, rain_mm, irrigation_minutes,
+                    moisture_minus_1h, temp_rolling_3h_avg, drying_rate_per_hour, et_index,
+                    (time_of_day + hours) % 24.0, time_since_last_irrigation + hours
+                ]])[0])
+            except Exception:
+                predicted = _balance(
+                    moisture, hours, temperature, humidity, sunlight,
+                    rain_mm * min(1, hours / 6), irrigation_minutes,
+                )
+        else:
+            predicted = _balance(
+                moisture, hours, temperature, humidity, sunlight,
+                rain_mm * min(1, hours / 6), irrigation_minutes,
             )
-            points.append({
-                "hours": hours,
-                "moisturePercent": round(predicted, 1),
-                "provenance": "estimated",
-            })
-
-    return points, MODEL_DESCRIPTION
-
-
-def generate_irrigation_schedule(
-    *,
-    moisture: float | None,
-    low_threshold: float,
-    target_moisture: float,
-    flow_litres_per_minute: float,
-    max_duration_minutes: int,
-    hourly_weather: list[dict[str, Any]],
-    current_time: datetime | None = None,
-    language: str = "en",
-) -> dict[str, Any]:
-    """Determine dynamic watering start time, estimated duration, volume, and next evaluation."""
-    now = current_time or now_utc()
-    flow_rate = max(0.1, float(flow_litres_per_minute))
-    cap_minutes = max(1, int(max_duration_minutes))
-
-    if moisture is None or not (0.0 <= moisture <= 100.0):
-        return {
-            "status": "CHECK FIELD",
-            "recommendedStartTime": None,
-            "durationMinutes": None,
-            "estimatedLitres": None,
-            "targetMoisture": target_moisture,
-            "timingReason": "Sensors require physical inspection before watering can be scheduled.",
-            "nextEvaluationTime": iso(now + timedelta(hours=1)),
-            "assumptions": f"Assumed flow rate: {flow_rate:.1f} L/min.",
-        }
-
-    # Hourly rain outlook in first 6 hours
-    rain_6h = sum(float(h.get("precipitationMm", 0.0)) for h in hourly_weather[:6])
-    max_prob_6h = max((float(h.get("precipitationProbability", 0.0)) for h in hourly_weather[:6]), default=0.0)
-    meaningful_rain_soon = max_prob_6h >= 60.0 and rain_6h >= 2.0
-
-    # Case A: Soil is already dry (< low_threshold)
-    if moisture < low_threshold:
-        if meaningful_rain_soon:
-            rain_hour_idx = next(
-                (idx for idx, h in enumerate(hourly_weather[:6]) if float(h.get("precipitationMm", 0.0)) >= 0.5),
-                2,
-            )
-            rain_start_est = now + timedelta(hours=rain_hour_idx)
-            return {
-                "status": "WAIT",
-                "recommendedStartTime": None,
-                "durationMinutes": 0,
-                "estimatedLitres": 0.0,
-                "targetMoisture": target_moisture,
-                "timingReason": f"Rain ({rain_6h:.1f} mm) is expected within 6 hours. Delaying watering to conserve water.",
-                "nextEvaluationTime": iso(rain_start_est),
-                "assumptions": f"Upcoming precipitation: {rain_6h:.1f} mm; Flow rate: {flow_rate:.1f} L/min.",
-            }
-
-        # Water Now
-        deficit = max(2.0, target_moisture - moisture)
-        raw_minutes = round(deficit / WETTING_RATE_PER_MINUTE)
-        duration = max(5, min(cap_minutes, raw_minutes))
-        litres = round(duration * flow_rate, 1)
-        expected_after = round(min(100.0, moisture + duration * WETTING_RATE_PER_MINUTE), 1)
-        capped_note = " (capped by max duration limit)" if raw_minutes > cap_minutes else ""
-
-        return {
-            "status": "WATER NOW",
-            "recommendedStartTime": iso(now),
-            "durationMinutes": duration,
-            "estimatedLitres": litres,
-            "targetMoisture": expected_after,
-            "timingReason": f"Soil moisture ({moisture:.1f}%) is below the {low_threshold:.1f}% threshold with no rain expected.{capped_note}",
-            "nextEvaluationTime": iso(now + timedelta(minutes=duration + 15)),
-            "assumptions": f"Wetting response: 0.32%/min; Flow rate: {flow_rate:.1f} L/min; Target: {target_moisture:.1f}%.",
-        }
-
-    # Case B: Soil is adequately moist now (>= low_threshold)
-    # Simulate hourly forward projection to find threshold crossing
-    timeline = simulate_48h_timeline(moisture, hourly_weather)
-    cross_hour: int | None = None
-    for item in timeline:
-        if item["moisturePercent"] < low_threshold:
-            cross_hour = item["hour"]
-            break
-
-    if cross_hour is not None:
-        # Crosses threshold in `cross_hour` hours
-        scheduled_start = now + timedelta(hours=cross_hour - 1)
-        # Check rain around scheduled time
-        rain_around_cross = sum(
-            float(hourly_weather[i].get("precipitationMm", 0.0))
-            for i in range(max(0, cross_hour - 2), min(len(hourly_weather), cross_hour + 4))
-        )
-        if rain_around_cross >= 2.0:
-            return {
-                "status": "WAIT",
-                "recommendedStartTime": None,
-                "durationMinutes": 0,
-                "estimatedLitres": 0.0,
-                "targetMoisture": target_moisture,
-                "timingReason": f"Moisture will reach threshold in ~{cross_hour} hours, but rain is expected. Waiting for rain.",
-                "nextEvaluationTime": iso(now + timedelta(hours=min(6, cross_hour))),
-                "assumptions": f"Simulated threshold crossing at +{cross_hour}h; Flow rate: {flow_rate:.1f} L/min.",
-            }
-
-        # Calculate targeted duration at crossing
-        projected_moisture = timeline[cross_hour - 1]["moisturePercent"]
-        deficit = max(2.0, target_moisture - projected_moisture)
-        duration = max(5, min(cap_minutes, round(deficit / WETTING_RATE_PER_MINUTE)))
-        litres = round(duration * flow_rate, 1)
-        expected_after = round(min(100.0, projected_moisture + duration * WETTING_RATE_PER_MINUTE), 1)
-
-        return {
-            "status": "WAIT",
-            "recommendedStartTime": iso(scheduled_start),
-            "durationMinutes": duration,
-            "estimatedLitres": litres,
-            "targetMoisture": expected_after,
-            "timingReason": f"Soil has adequate water now, but is projected to reach dry threshold in about {cross_hour} hours.",
-            "nextEvaluationTime": iso(now + timedelta(hours=min(6, cross_hour))),
-            "assumptions": f"Simulated threshold crossing at +{cross_hour}h; Flow rate: {flow_rate:.1f} L/min.",
-        }
-
-    # Case C: Soil remains above threshold throughout 48h
-    return {
-        "status": "WAIT",
-        "recommendedStartTime": None,
-        "durationMinutes": 0,
-        "estimatedLitres": 0.0,
-        "targetMoisture": target_moisture,
-        "timingReason": "Soil moisture is healthy and expected to remain above threshold for the next 48 hours.",
-        "nextEvaluationTime": iso(now + timedelta(hours=6)),
-        "assumptions": f"Stable moisture balance; Flow rate: {flow_rate:.1f} L/min.",
-    }
+        points.append({
+            "hours": hours,
+            "moisturePercent": round(max(0.0, min(100.0, predicted)), 1),
+            "provenance": "estimated",
+        })
+    return points, _model_status
 
 
 def strategy_comparison(
@@ -283,53 +197,40 @@ def strategy_comparison(
     rain_probability: float,
     rain_mm: float,
     flow_litres_per_minute: float,
-    hourly_weather: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Compare 4 candidate irrigation schedules over 48 hours under identical conditions.
+    """Compare 4 irrigation strategies over a 48h horizon under identical simulated conditions.
 
-    A. Fixed schedule:
-       - Configurable timer baseline: 15 min every 12 hours (hour 6, 18, 30, 42 = 60 min total).
-    B. Moisture threshold:
-       - Waters 15 min when soil falls below low_threshold (with 4h cooldown).
-    C. Rain-aware threshold:
-       - Waters when dry, but delays if meaningful rain (prob >= 60%, amount >= 2mm) is forecast within 6h.
-    D. Optimized schedule:
-       - Predictive water-smart: targeted volume to reach target without overshooting, delays for forecast rain.
+    All strategies share:
+    - Same initial soil moisture and thresholds.
+    - Same weather (temperature, humidity, sunlight, rain).
+    - Same soil evaporation and absorption model.
+    - Same assumed flow-rate parameter (litres per minute).
+
+    Strategies:
+    - Fixed schedule: Conventional timer watering (15 min every 12h = 60 min total in 48h).
+    - Moisture threshold: Waters only when moisture drops below low threshold, with a 4h cooldown.
+    - Rain-aware threshold: Responsive watering, but delays if meaningful rain (>=60% chance, >=2mm) is expected within 6h.
+    - Optimized schedule: Predictive scheduling that balances stress prevention and water conservation.
     """
     names = ["Fixed schedule", "Moisture threshold", "Rain-aware threshold", "Optimized schedule"]
     descriptions = {
-        "Fixed schedule": "Timer baseline: Rigid calendar schedule (15 min every 12h) regardless of moisture or rain.",
-        "Moisture threshold": "Sensor threshold: Waters 15 min when soil drops below threshold, with 4h rest intervals.",
-        "Rain-aware threshold": "Weather-aware: Waters below threshold, but pauses if meaningful rain is forecast within 6 hours.",
+        "Fixed schedule": "Timer baseline: Waters on a rigid calendar schedule (15 min every 12h) regardless of soil or rain.",
+        "Moisture threshold": "Sensor threshold: Waters 15 min when soil drops below threshold, with rest intervals.",
+        "Rain-aware threshold": "Weather-aware: Waters below threshold, but pauses if meaningful rain is forecasted within 6 hours.",
         "Optimized schedule": "Predictive water-smart: Calculates targeted durations to reach target moisture while leveraging rain forecasts.",
     }
-
     totals: dict[str, dict[str, float]] = {
-        name: {"water": 0.0, "sessions": 0.0, "stress": 0.0, "over": 0.0}
+        name: {"water": 0.0, "stress": 0.0, "over": 0.0}
         for name in names
     }
     levels = {name: max(0.0, min(100.0, float(moisture))) for name in names}
     last_watered = {name: -10 for name in names}
+    meaningful_rain = rain_probability >= 60 and rain_mm >= 2
     flow_rate = max(0.1, float(flow_litres_per_minute))
     wet_ceiling = min(100.0, target + 8.0)
 
-    # 48-hour simulation
+    # Simulate 48 hourly steps under identical conditions
     for hour in range(48):
-        # Extract hourly weather parameters if provided
-        if hourly_weather and hour < len(hourly_weather):
-            h_weather = hourly_weather[hour]
-            t = float(h_weather.get("temperatureC", temperature))
-            hm = float(h_weather.get("humidityPercent", humidity))
-            s = round(max(5.0, min(100.0, 76.0 - (hm - 50.0) * 0.4)), 1)
-            r = float(h_weather.get("precipitationMm", 0.0))
-            prob = float(h_weather.get("precipitationProbability", 0.0))
-        else:
-            t, hm, s = temperature, humidity, sunlight
-            r = (rain_mm / 6.0) if (hour < 6 and rain_probability >= 60 and rain_mm >= 2) else 0.0
-            prob = rain_probability if hour < 6 else 0.0
-
-        meaningful_rain_window = prob >= 60.0 and r >= 0.33  # ~2mm over 6h
-
         for name in names:
             level = levels[name]
             if level < low_threshold:
@@ -342,26 +243,36 @@ def strategy_comparison(
             cooldown_ok = (hour - last_watered[name]) >= 4
 
             if name == "Fixed schedule":
+                # Conventional practice: waters at hour 6, 18, 30, 42
                 if hour % 12 == 6:
                     should_water, minutes = True, 15
             elif name == "Moisture threshold":
+                # Waters when dry with cooldown
                 if level < low_threshold and cooldown_ok:
                     should_water, minutes = True, 15
             elif name == "Rain-aware threshold":
-                if level < low_threshold and cooldown_ok and not meaningful_rain_window:
+                # Waters when dry with cooldown, unless rain is imminent
+                rain_imminent = (hour < 6 and meaningful_rain)
+                if level < low_threshold and cooldown_ok and not rain_imminent:
                     should_water, minutes = True, 15
             elif name == "Optimized schedule":
-                dry_step = drying_rate(t, hm, s)
-                will_dry_soon = (level - dry_step * 3) < low_threshold
-                if (level < low_threshold or will_dry_soon) and cooldown_ok and not meaningful_rain_window:
+                # Predictive: checks if currently dry or drying will push below threshold within 4h
+                drying_step = _drying_rate(temperature, humidity, sunlight)
+                will_dry_soon = (hour < 6 and not meaningful_rain and (level - drying_step * 3) < low_threshold)
+                rain_imminent = (hour < 6 and meaningful_rain)
+                if (level < low_threshold or will_dry_soon) and cooldown_ok and not rain_imminent:
+                    # Targeted volume to reach target without overshooting
                     deficit = max(4.0, min(30.0, target - level))
-                    calc_minutes = max(8, min(25, round(deficit / WETTING_RATE_PER_MINUTE)))
+                    calc_minutes = max(8, min(25, round(deficit / 0.28)))
                     should_water, minutes = True, calc_minutes
 
-            level = balance_step(level, 1.0, t, hm, s, r, minutes if should_water else 0)
+            simulated_rain = (rain_mm / 6.0) if (hour < 6 and meaningful_rain) else 0.0
+            level = _balance(
+                level, 1, temperature, humidity, sunlight, simulated_rain,
+                minutes if should_water else 0,
+            )
             if should_water:
                 totals[name]["water"] += minutes * flow_rate
-                totals[name]["sessions"] += 1.0
                 last_watered[name] = hour
             levels[name] = max(0.0, min(100.0, level))
 
@@ -370,7 +281,6 @@ def strategy_comparison(
     results = []
     for name in names:
         candidate_water = totals[name]["water"]
-        # Explicit zero-baseline handling
         if baseline_water > 0:
             savings_pct = round((baseline_water - candidate_water) / baseline_water * 100.0, 1)
         else:
@@ -383,22 +293,29 @@ def strategy_comparison(
         else:
             savings_type = "neutral"
 
-        is_recommended = (name == "Optimized schedule")
+        # Determine if strategy is recommended based on stress prevention and efficiency
+        is_recommended = False
+        if name == "Optimized schedule":
+            # Recommended if it has lower or equal stress than fixed and doesn't waste excessive water
+            is_recommended = totals[name]["stress"] <= totals["Fixed schedule"]["stress"]
+        elif name == "Rain-aware threshold" and not is_recommended:
+            is_recommended = (
+                totals[name]["stress"] <= totals["Fixed schedule"]["stress"]
+                and totals[name]["water"] < totals["Fixed schedule"]["water"]
+            )
 
         results.append({
             "name": name,
             "description": descriptions[name],
             "waterLitres": round(candidate_water, 1),
-            "sessionsCount": int(totals[name]["sessions"]),
             "dryStressHours": int(totals[name]["stress"]),
             "overwateringHours": int(totals[name]["over"]),
             "waterSavedPercent": savings_pct,
             "savingsType": savings_type,
-            "assumedFlowRateLpm": flow_rate,
-            "isFlowRateConfigured": True,
             "isBaseline": (name == "Fixed schedule"),
             "isRecommended": is_recommended,
+            "assumedFlowRateLpm": flow_rate,
+            "isFlowRateConfigured": True,
         })
 
-    # Canonical order: Fixed baseline first, followed by threshold, rain-aware, and optimized
     return results

@@ -122,6 +122,8 @@ def calculate_recommendation(
     max_duration_minutes: int = 45,
     flow_litres_per_minute: float = 12.0,
     forecast_moisture_6h: float | None = None,
+    time_of_day: float = 12.0,
+    time_since_last_irrigation: float = 24.0,
     language: str = "en",
     current_time: datetime | None = None,
 ) -> dict[str, Any]:
