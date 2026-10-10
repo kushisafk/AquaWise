@@ -58,17 +58,74 @@ DB_LOCK = threading.RLock()
 
 def _weather_from_open_meteo(latitude: float, longitude: float) -> dict:
     import urllib.request
+    import json
+    from datetime import datetime, timezone
     
     API_KEY = "AIzaSyDBLRANvsoLcpTyBKuib510TZ2ss3CjRs4"
-    google_url = f"https://weather.googleapis.com/v1/forecast?lat={latitude}&lon={longitude}&key={API_KEY}"
+    google_url = f"https://weather.googleapis.com/v1/forecast/hours:lookup?location.latitude={latitude}&location.longitude={longitude}&key={API_KEY}"
     
     try:
         req = urllib.request.Request(google_url, headers={'User-Agent': 'AquaWise'})
         with urllib.request.urlopen(req, timeout=5) as response:
-            # We would parse the Google response here if the API was active.
-            # Fall back safely.
-            pass
+            data = json.loads(response.read())
+            
+            hours = data.get("forecastHours", [])
+            if not hours:
+                raise ValueError("No forecastHours found")
+                
+            hourly_series = []
+            max_prob_6h = 0.0
+            total_rain_6h = 0.0
+            
+            for i, h in enumerate(hours[:48]):
+                temp = float(h.get("temperature", {}).get("degrees", 25.0))
+                humidity = float(h.get("relativeHumidity", 55.0))
+                prob = float(h.get("precipitation", {}).get("probability", {}).get("percent", 0.0))
+                rain = float(h.get("precipitation", {}).get("qpf", {}).get("quantity", 0.0))
+                time_str = h.get("interval", {}).get("startTime", "")
+                
+                hourly_series.append({
+                    "time": time_str,
+                    "precipitationProbability": prob,
+                    "precipitationMm": rain,
+                    "temperatureC": temp,
+                    "humidityPercent": humidity,
+                })
+                
+                if i < 6:
+                    max_prob_6h = max(max_prob_6h, prob)
+                    total_rain_6h += rain
+            
+            curr = hourly_series[0] if hourly_series else {}
+            is_raining_now = curr.get("precipitationMm", 0.0) > 0.0
+            
+            if is_raining_now:
+                summary = "Rain now"
+            elif max_prob_6h >= 60 and total_rain_6h >= 2.0:
+                summary = "Rain likely within 6 hours"
+            elif max_prob_6h >= 30:
+                summary = "A chance of rain"
+            else:
+                summary = "Mostly dry for the next 6 hours"
+                
+            return {
+                "status": "LIVE",
+                "stale": False,
+                "temperatureC": curr.get("temperatureC", 25.0),
+                "humidityPercent": curr.get("humidityPercent", 55.0),
+                "rainingNow": is_raining_now,
+                "rainProbability6h": round(max_prob_6h, 1),
+                "precipitationMm6h": total_rain_6h,
+                "summary": summary,
+                "source": "Google Weather API",
+                "updatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "hourly": hourly_series,
+                "latitude": latitude,
+                "longitude": longitude,
+            }
+            
     except Exception:
+        # If anything fails (like a network timeout), fallback to Open-Meteo
         pass
         
     return fetch_open_meteo(latitude, longitude)
