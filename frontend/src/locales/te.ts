@@ -68,6 +68,16 @@ const page = {
   sensorNoRain: 'వర్షం లేదు',
   sensorHumidityLabel: 'పొలంలో తేమ',
   forecastRainVolume: 'వర్షం పరిమాణం (6 గంటలు)',
+  autoWateringOn: 'ఆటోమేటిక్ నీటి సరఫరా: ఆన్ (Auto: ON)',
+  advisoryModeLabel: 'సలహా మోడ్ (రైతు ఆమోదం అవసరం)',
+  forceStopWatering: 'నీటిని బలవంతంగా ఆపివేయండి (Force stop)',
+  wateringTimerRemaining: 'మిగిలి ఉన్న సమయం',
+  elapsedTime: 'పూర్తయిన సమయం',
+  totalDuration: 'మొత్తం సమయం',
+  nextAutoCheckTimer: 'తదుపరి ఆటోమేటిక్ తనిఖీ',
+  nextAdvisoryCheckTimer: 'తదుపరి తనిఖీ',
+  autoSessionTag: 'ఆటోమేటిక్ సైకిల్ (AUTO)',
+  manualSessionTag: 'మాన్యువల్ సెషన్ (MANUAL)',
   esp32SectionTitle: 'ESP32 స్మార్ట్ హార్డ్‌వేర్ కంట్రోలర్',
   esp32SectionSub: 'ప్రత్యక్ష 1-సెకను టెలిమెట్రీ, పంప్ నియంత్రణ మరియు హార్డ్‌వేర్ భద్రత',
   esp32StatusLive: 'హార్డ్‌వేర్ లైవ్ (1s)',
@@ -109,4 +119,5 @@ const page = {
 const dictionary = { ...common, ...page } as const;
 
 export default dictionary;
+
 

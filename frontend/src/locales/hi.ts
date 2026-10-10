@@ -68,6 +68,16 @@ const page = {
   sensorNoRain: 'बारिश नहीं है',
   sensorHumidityLabel: 'खेत की आर्द्रता',
   forecastRainVolume: 'अनुमानित बारिश (6 घंटे)',
+  autoWateringOn: 'स्वचालित सिंचाई: चालू (Auto: ON)',
+  advisoryModeLabel: 'परामर्श मोड (पुष्टि आवश्यक)',
+  forceStopWatering: 'सिंचाई तुरंत रोकें (Force stop)',
+  wateringTimerRemaining: 'शेष समय',
+  elapsedTime: 'बीता हुआ समय',
+  totalDuration: 'कुल अवधि',
+  nextAutoCheckTimer: 'अगली स्वचालित जांच',
+  nextAdvisoryCheckTimer: 'अगली जांच',
+  autoSessionTag: 'स्वचालित चक्र (AUTO)',
+  manualSessionTag: 'मैन्युअल सत्र (MANUAL)',
   esp32SectionTitle: 'ESP32 स्मार्ट हार्डवेयर नियंत्रक',
   esp32SectionSub: 'लाइव 1-सेकंड टेलीमेट्री, पंप नियंत्रण और हार्डवेयर सुरक्षा इंटरलॉक',
   esp32StatusLive: 'हार्डवेयर लाइव (1s)',
@@ -109,4 +119,5 @@ const page = {
 const dictionary = { ...common, ...page } as const;
 
 export default dictionary;
+
 

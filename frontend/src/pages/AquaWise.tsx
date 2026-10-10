@@ -16,7 +16,7 @@ import { useAquaWise, tr } from '@/App';
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock, CloudLightning, CloudRain, CloudSun,
   Cpu, Droplet, Droplets, Gauge, History, Info, Leaf, LoaderCircle, Power, Radio, RefreshCw,
-  RotateCcw, Shield, ShieldCheck, SlidersHorizontal, Sprout, Sun, Thermometer,
+  RotateCcw, Shield, ShieldCheck, SlidersHorizontal, Sprout, Sun, Thermometer, Timer,
   ThumbsDown, ThumbsUp, Volume2, WifiOff, Zap
 } from 'lucide-react';
 import { Link } from 'wouter';
@@ -226,7 +226,7 @@ export function DashboardPage() {
   const field = useGetFieldState({ query: { queryKey: getGetFieldStateQueryKey(), refetchInterval: 30_000 } });
   const weather = useGetWeather({ query: { queryKey: getGetWeatherQueryKey(), refetchInterval: 60_000 } });
   const rec = useGetRecommendation({ query: { queryKey: getGetRecommendationQueryKey(), refetchInterval: 30_000 } });
-  const settings = useGetSettings();
+  const settings = useGetSettings({ query: { queryKey: getGetSettingsQueryKey(), refetchInterval: 30_000 } });
   const start = useStartIrrigation();
   const stop = useStopIrrigation();
   const feedback = useSubmitFeedback();
@@ -236,6 +236,48 @@ export function DashboardPage() {
   const state = field.data;
   const recommendation = rec.data || state?.recommendation;
   const conditionStale = appStale || !!weather.data?.stale || recommendation?.provenance === 'stale' || state?.telemetry.provenance === 'stale';
+
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isAutoMode = settings.data?.controlMode === 'auto';
+  const isWatering = Boolean(state?.irrigation.active) || Boolean(esp32.data?.pump_running);
+  const isAutoSession = isWatering && (state?.irrigation.source === 'automatic' || isAutoMode || Boolean(esp32.data?.auto_pump));
+
+  // Active Watering Timer Calculation
+  const wateringDurationMin = state?.irrigation.durationMinutes ?? 15;
+  const wateringDurationSec = Math.max(1, wateringDurationMin * 60);
+
+  const wateringEndsAtMs = state?.irrigation.endsAt
+    ? new Date(state.irrigation.endsAt).getTime()
+    : state?.irrigation.startedAt
+      ? new Date(state.irrigation.startedAt).getTime() + wateringDurationSec * 1000
+      : nowTs + wateringDurationSec * 1000;
+
+  const remainingWateringSec = Math.max(0, Math.floor((wateringEndsAtMs - nowTs) / 1000));
+  const elapsedWateringSec = Math.min(wateringDurationSec, Math.max(0, wateringDurationSec - remainingWateringSec));
+  const wateringProgressPct = Math.min(100, Math.max(0, (elapsedWateringSec / wateringDurationSec) * 100));
+
+  // Idle / Schedule Evaluation Timer Calculation
+  const nextEvalIso = (state as any)?.schedule?.nextEvaluationTime
+    || (recommendation as any)?.nextCheckTime
+    || (state as any)?.schedule?.recommendedStartTime;
+
+  const nextEvalMs = nextEvalIso ? new Date(nextEvalIso).getTime() : 0;
+  const nextEvalDiffSec = nextEvalMs > nowTs ? Math.floor((nextEvalMs - nowTs) / 1000) : 0;
+
+  const formatCountdown = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) {
+      return `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+    }
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   const refresh = () => { void field.refetch(); void weather.refetch(); void rec.refetch(); void esp32.refreshStatus(); };
 
@@ -259,11 +301,18 @@ export function DashboardPage() {
     stop.mutate(undefined, {
       onSuccess: () => {
         invalidate();
-        notify(l === 'te' ? 'నీటి చర్య ఆపబడింది.' : l === 'hi' ? 'సిंचाई रोक दी गई।' : 'Watering session stopped.');
+        notify(
+          l === 'te'
+            ? (isAutoSession || isAutoMode ? 'ఆటోమేటిక్ నీటి చర్య బలవంతంగా ఆపబడింది.' : 'నీటి చర్య ఆపబడింది.')
+            : l === 'hi'
+              ? (isAutoSession || isAutoMode ? 'स्वचालित सिंचाई तुरंत रोक दी गई।' : 'सिंचाई रोक दी गई।')
+              : (isAutoSession || isAutoMode ? 'Automatic watering force-stopped.' : 'Watering session stopped.')
+        );
       },
       onError: (error) => notify(errText(error)),
     });
   };
+
 
   const sendFeedback = (helpful: boolean) => {
     feedback.mutate(
@@ -401,7 +450,6 @@ export function DashboardPage() {
     );
   }
 
-  const isWatering = Boolean(state?.irrigation.active) || Boolean(esp32.data?.pump_running);
   const status = (esp32.isConnected && esp32.data?.recommendation) ? esp32.data.recommendation : (recommendation?.status || 'WAIT');
 
   const statusTone = isWatering
@@ -447,14 +495,63 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Dominant Hero Recommendation Card (Clean, No Pills) */}
+      {/* Dominant Hero Recommendation Card */}
       <section className={`calm-hero tone-${statusTone}`} data-testid="card-recommendation">
+        {/* Subtle Mode Box (lowkey rectangular tag, no pills) */}
+        {isAutoMode ? (
+          <div className="hero-mode-tag" data-testid="tag-mode-auto">
+            {tx(l, 'automatic')}
+          </div>
+        ) : (
+          <div className="hero-mode-tag advisory" data-testid="tag-mode-advisory">
+            {tx(l, 'advisory')}
+          </div>
+        )}
+
         <h1 className="hero-dominant-title">{dominantTitle}</h1>
 
         <p className="hero-explanation">{explanation}</p>
 
+        {/* Lowkey Timer (no enclosing card/box, solid line without gradient) */}
+        {isWatering ? (
+          <div className="hero-timer-clean" data-testid="active-watering-timer">
+            <div className="timer-clean-header">
+              <span className="timer-clean-label">{tx(l, 'wateringTimerRemaining')}:</span>
+              <span className="timer-clean-digits font-mono">
+                {formatCountdown(remainingWateringSec)}
+              </span>
+            </div>
+
+            <div className="timer-clean-track">
+              <div
+                className="timer-clean-bar"
+                style={{ width: `${wateringProgressPct}%` }}
+              />
+            </div>
+
+            <div className="timer-clean-meta">
+              <span>{tx(l, 'elapsedTime')}: {formatCountdown(elapsedWateringSec)}</span>
+              <span>{tx(l, 'totalDuration')}: {wateringDurationMin} {tx(l, 'minutes')}</span>
+            </div>
+          </div>
+        ) : (
+          /* Lowkey Idle / Scheduled Timer */
+          nextEvalDiffSec > 0 && (
+            <div className="hero-timer-clean idle" data-testid="idle-schedule-timer">
+              <div className="timer-clean-header">
+                <span className="timer-clean-label">
+                  {isAutoMode ? tx(l, 'nextAutoCheckTimer') : tx(l, 'nextAdvisoryCheckTimer')}:
+                </span>
+                <span className="timer-clean-digits font-mono">
+                  {formatCountdown(nextEvalDiffSec)}
+                </span>
+              </div>
+            </div>
+          )
+        )}
+
         {/* Dynamic Schedule Outlook */}
-        {((state as any)?.schedule || recommendation) && (
+        {!isWatering && ((state as any)?.schedule || recommendation) && (
           <div className="hero-schedule-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
             {status === 'WATER NOW' && ((state as any)?.schedule?.durationMinutes || recommendation?.durationMinutes) ? (
               <span>
@@ -494,7 +591,7 @@ export function DashboardPage() {
               data-testid="button-stop-irrigation"
             >
               {(stop.isPending || esp32.isCommandPending) ? <LoaderCircle size={18} className="animate-spin" /> : <Droplet size={18} />}
-              <span>{tx(l, 'stopWatering')}</span>
+              <span>{isAutoSession || isAutoMode ? tx(l, 'forceStopWatering') : tx(l, 'stopWatering')}</span>
             </button>
           ) : status === 'WATER NOW' ? (
             <button
@@ -876,15 +973,8 @@ export function DashboardPage() {
       {/* 1. Local Sensor Telemetry Section */}
       <section className="sensor-section-card" data-testid="section-local-sensors" aria-label="Local field sensors">
         <div className="sensor-section-header">
-          <div className="sensor-section-title-group">
-            <div className="section-badge-pill sensor-badge">
-              <span className="live-pulse-dot" />
-              <span>{tx(l, 'localSensorsTitle')}</span>
-            </div>
-            <p className="sensor-section-subtitle">{tx(l, 'localSensorsSub')}</p>
-          </div>
-
-          <span className="source-tag">{state?.telemetry.provenance === 'simulated' ? 'SIMULATED SENSORS' : 'LOCAL HARDWARE'}</span>
+          <h2 className="sensor-section-title">{tx(l, 'localSensorsTitle')}</h2>
+          <p className="sensor-section-subtitle">{tx(l, 'localSensorsSub')}</p>
         </div>
 
         <div className="local-sensors-grid">
@@ -969,16 +1059,10 @@ export function DashboardPage() {
       </section>
 
       {/* 2. Google Weather API Section (No soil moisture) */}
-      <section className="sensor-section-card weather-api-section" data-testid="section-google-weather-api" aria-label="Google Weather API forecast">
+      <section className="sensor-section-card" data-testid="section-google-weather-api" aria-label="Google Weather API forecast">
         <div className="sensor-section-header">
-          <div className="sensor-section-title-group">
-            <div className="section-badge-pill weather-badge">
-              <CloudSun size={14} />
-              <span>{tx(l, 'weatherApiTitle')}</span>
-            </div>
-            <p className="sensor-section-subtitle">{tx(l, 'weatherApiSub')}</p>
-          </div>
-          <span className="source-tag">{weather.data?.source || 'Google Weather API'}</span>
+          <h2 className="sensor-section-title">{tx(l, 'weatherApiTitle')}</h2>
+          <p className="sensor-section-subtitle">{tx(l, 'weatherApiSub')}</p>
         </div>
 
         <div className="google-weather-grid">
