@@ -238,10 +238,7 @@ def get_weather(
 
     # 3. Attempt live fetch from Open-Meteo
     try:
-        import sys
-        main_mod = sys.modules.get("main")
-        fetcher = getattr(main_mod, "_weather_from_open_meteo", fetch_open_meteo) if main_mod else fetch_open_meteo
-        live = fetcher(latitude, longitude)
+        live = fetch_open_meteo(latitude, longitude)
         # Store in SQLite cache
         db.execute(
             "INSERT INTO weather_snapshots(id, payload, fetched_at) VALUES(1, ?, ?) "

@@ -15,17 +15,20 @@ import hi from '@/locales/hi';
 import { useAquaWise, tr } from '@/App';
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock, CloudLightning, CloudRain, CloudSun,
-  Droplet, Droplets, Gauge, History, Info, Leaf, LoaderCircle, RefreshCw,
-  RotateCcw, ShieldCheck, SlidersHorizontal, Sprout, Sun, Thermometer, Timer,
+  Cpu, Droplet, Droplets, Gauge, History, Info, Leaf, LoaderCircle, Power, Radio, RefreshCw,
+  RotateCcw, Shield, ShieldCheck, SlidersHorizontal, Sprout, Sun, Thermometer, Timer,
   ThumbsDown, ThumbsUp, Volume2, WifiOff, Zap
 } from 'lucide-react';
 import { Link } from 'wouter';
+import { useESP32 } from '@/hooks/use-esp32';
+import { formatUptime, getMoistureCategory, fetchESP32Status, solarVoltageToSunIntensity } from '@/lib/esp32';
 
 const copy = { en, te, hi } as const;
 const tx = (lang: 'en' | 'te' | 'hi', key: keyof typeof copy.en) => (copy[lang][key] ?? copy.en[key] ?? key) as string;
 const qk = [getGetFieldStateQueryKey(), getGetWeatherQueryKey(), getGetRecommendationQueryKey(), getGetAnalyticsQueryKey(), getGetHistoryQueryKey(), getGetNotificationsQueryKey()];
 const fmtTime = (value?: string | null) => value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 const errText = (error: unknown) => error instanceof Error ? error.message : 'Request could not be completed.';
+
 
 function PageHeading({ eyebrow, title, subtitle }: { eyebrow?: string; title: string; subtitle?: string }) {
   return (
@@ -227,6 +230,7 @@ export function DashboardPage() {
   const start = useStartIrrigation();
   const stop = useStopIrrigation();
   const feedback = useSubmitFeedback();
+  const esp32 = useESP32();
 
   const invalidate = () => { qk.forEach((queryKey) => void client.invalidateQueries({ queryKey })); };
   const state = field.data;
@@ -240,8 +244,8 @@ export function DashboardPage() {
   }, []);
 
   const isAutoMode = settings.data?.controlMode === 'auto';
-  const isWatering = Boolean(state?.irrigation.active);
-  const isAutoSession = isWatering && (state?.irrigation.source === 'automatic' || isAutoMode);
+  const isWatering = Boolean(state?.irrigation.active) || Boolean(esp32.data?.pump_running);
+  const isAutoSession = isWatering && (state?.irrigation.source === 'automatic' || isAutoMode || Boolean(esp32.data?.auto_pump));
 
   // Active Watering Timer Calculation
   const wateringDurationMin = state?.irrigation.durationMinutes ?? 15;
@@ -259,7 +263,7 @@ export function DashboardPage() {
 
   // Idle / Schedule Evaluation Timer Calculation
   const nextEvalIso = (state as any)?.schedule?.nextEvaluationTime
-    || recommendation?.nextCheckTime
+    || (recommendation as any)?.nextCheckTime
     || (state as any)?.schedule?.recommendedStartTime;
 
   const nextEvalMs = nextEvalIso ? new Date(nextEvalIso).getTime() : 0;
@@ -275,7 +279,7 @@ export function DashboardPage() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const refresh = () => { void field.refetch(); void weather.refetch(); void rec.refetch(); };
+  const refresh = () => { void field.refetch(); void weather.refetch(); void rec.refetch(); void esp32.refreshStatus(); };
 
   const runWater = () => {
     if (!recommendation) return;
@@ -309,6 +313,7 @@ export function DashboardPage() {
     });
   };
 
+
   const sendFeedback = (helpful: boolean) => {
     feedback.mutate(
       { data: { helpful, comment: '' } },
@@ -339,7 +344,7 @@ export function DashboardPage() {
       notify(tx(l, 'voiceUnavailable'));
       return;
     }
-    if (!recommendation && !isWatering) return;
+    if (!recommendation && !isWatering && !esp32.data) return;
 
     const voices = window.speechSynthesis.getVoices();
     const langVoices = voices.filter((v) => {
@@ -368,8 +373,10 @@ export function DashboardPage() {
       return;
     }
 
-    const moisture = state?.telemetry.soilMoisture != null ? Math.round(state.telemetry.soilMoisture) : null;
-    const temp = Math.round(weather.data?.temperatureC ?? state?.telemetry.temperatureC ?? 28);
+    const moisture = esp32.data?.soil_moisture_percent != null
+      ? Math.round(esp32.data.soil_moisture_percent)
+      : (state?.telemetry.soilMoisture != null ? Math.round(state.telemetry.soilMoisture) : null);
+    const temp = Math.round(esp32.data?.temperature_c ?? weather.data?.temperatureC ?? state?.telemetry.temperatureC ?? 28);
     const rainChance = Math.round(weather.data?.rainProbability6h ?? 0);
     const rainMm = Math.round((weather.data?.precipitationMm6h ?? 0) * 10) / 10;
     const duration = recommendation?.durationMinutes ?? state?.irrigation.durationMinutes ?? 15;
@@ -377,7 +384,7 @@ export function DashboardPage() {
 
     let spokenText = '';
 
-    if (isWatering) {
+    if (isWatering || esp32.data?.pump_running) {
       if (l === 'te') {
         spokenText = `రైతు సోదరా, ప్రస్తుతం మీ పొలానికి నీరు పెట్టడం జరుగుతోంది. ఈ సెషన్ మొత్తం ${duration} నిమిషాలు నడుస్తుంది, ఇది నేల తేమను మీ లక్ష్యమైన ${targetMoisture} శాతానికి పెంచుతుంది. మీరు కోరుకుంటే ఎప్పుడైనా నీరు ఆపవచ్చు.`;
       } else if (l === 'hi') {
@@ -385,7 +392,7 @@ export function DashboardPage() {
       } else {
         spokenText = `Farmer friend, watering is currently underway for a total of ${duration} minutes. This session will replenish your soil moisture towards your target of ${targetMoisture} percent. You can tap stop watering at any time if you wish.`;
       }
-    } else if (status === 'WATER NOW') {
+    } else if (status === 'WATER NOW' || esp32.data?.recommendation === 'WATER NOW') {
       if (l === 'te') {
         spokenText = `రైతు సోదరా, మీ పొలంలో మట్టి తేమ ప్రస్తుతం ${moisture != null ? `${moisture} శాతం మాత్రమే ఉంది` : 'చాలా తక్కువగా ఉంది'}, ఇది పంటకు కావలసిన స్థాయి కంటే తక్కువ. రాబోయే 6 గంటల్లో వర్ష సూచన లేదు మరియు ఉష్ణోగ్రత ${temp} డిగ్రీలుగా ఉంది. పంట వేర్లు ఎండిపోకుండా ఉండటానికి, మీ పొలానికి ఇప్పుడు ${duration} నిమిషాలు నీరు పెట్టడం మంచిది. సిద్ధంగా ఉన్నప్పుడు నీరు పెట్టడం ప్రారంభించండి.`;
       } else if (l === 'hi') {
@@ -393,7 +400,7 @@ export function DashboardPage() {
       } else {
         spokenText = `Farmer friend, your soil moisture is currently down to ${moisture != null ? `${moisture} percent` : 'a low level'}, which is below your crop's healthy range. There is no rain expected in the next 6 hours, and temperature is ${temp} degrees Celsius. We recommend watering your field for ${duration} minutes now to keep the root zone healthy and prevent moisture stress.`;
       }
-    } else if (status === 'CHECK FIELD') {
+    } else if (status === 'CHECK FIELD' || esp32.data?.recommendation === 'CHECK FIELD') {
       if (l === 'te') {
         spokenText = `రైతు సోదరా, సిస్టమ్‌కు ప్రస్తుతం స్పష్టమైన మట్టి తేమ రీడింగ్ అందడం లేదు. సెన్సార్ వదులుగా ఉండవచ్చు లేదా నేల పరిస్థితిలో తేడా ఉండవచ్చు. దయచేసి నీరు పెట్టే ముందు మీ పొలాన్ని మరియు తేమ సెన్సార్‌ను స్వయంగా ఒకసారి పరిశీలించండి.`;
       } else if (l === 'hi') {
@@ -403,7 +410,7 @@ export function DashboardPage() {
       }
     } else {
       // WAIT
-      const isRain = weather.data?.rainingNow || rainChance >= 50;
+      const isRain = esp32.data?.rain_detected || weather.data?.rainingNow || rainChance >= 50;
       if (isRain) {
         if (l === 'te') {
           spokenText = `రైతు సోదరా, మీ పొలంలో తేమ తక్కువగా ఉన్నప్పటికీ, రాబోయే 6 గంటల్లో ${rainChance} శాతం వర్షం వచ్చే అవకాశం ఉంది. ప్రస్తుతానికి నీరు పెట్టవద్దు, వేచి ఉండండి. సహజ వర్షాన్ని సద్వినియోగం చేసుకోవడం వల్ల మీ నీరు ఆదా అవుతుంది మరియు నేల అతిగా తడవకుండా ఉంటుంది.`;
@@ -428,10 +435,6 @@ export function DashboardPage() {
     if (selectedVoice) {
       utterance.voice = selectedVoice;
     }
-    // Male vocal tuning:
-    // When a male voice package is detected, pitch 0.90 keeps natural baritone timbre.
-    // If only the device's default female voice package is installed, pitch 0.80 lowers
-    // formant frequencies into a warm, natural, resonant male elder advisor register.
     utterance.pitch = selectedVoice && isMale(selectedVoice) ? 0.90 : 0.80;
     utterance.rate = 0.92;
     utterance.onerror = () => notify(tx(l, 'voiceError'));
@@ -447,7 +450,7 @@ export function DashboardPage() {
     );
   }
 
-  const status = recommendation?.status;
+  const status = (esp32.isConnected && esp32.data?.recommendation) ? esp32.data.recommendation : (recommendation?.status || 'WAIT');
 
   const statusTone = isWatering
     ? 'watering'
@@ -472,7 +475,7 @@ export function DashboardPage() {
         : l === 'hi'
           ? `सिंचाई चल रही है (${state?.irrigation.durationMinutes ?? 15} मिनट)।`
           : `Watering right now for ${state?.irrigation.durationMinutes ?? 15} minutes.`)
-    : (recommendation?.reason || tx(l, 'reasonFallback'));
+    : ((esp32.isConnected && esp32.data?.reason) ? esp32.data.reason : (recommendation?.reason || tx(l, 'reasonFallback')));
 
   return (
     <Page>
@@ -572,21 +575,43 @@ export function DashboardPage() {
           {isWatering ? (
             <button
               className="btn btn-prominent-danger"
-              onClick={doStop}
-              disabled={stop.isPending || appStale}
+              onClick={async () => {
+                if (esp32.data?.pump_running) {
+                  try {
+                    await esp32.stopPump();
+                    notify(l === 'te' ? 'నీటి చర్య ఆపబడింది.' : l === 'hi' ? 'सिंचाई रोक दी गई।' : 'Watering session stopped.');
+                  } catch (err) {
+                    notify(errText(err));
+                  }
+                } else {
+                  doStop();
+                }
+              }}
+              disabled={stop.isPending || esp32.isCommandPending || appStale}
               data-testid="button-stop-irrigation"
             >
-              {stop.isPending ? <LoaderCircle size={18} className="animate-spin" /> : <Droplet size={18} />}
+              {(stop.isPending || esp32.isCommandPending) ? <LoaderCircle size={18} className="animate-spin" /> : <Droplet size={18} />}
               <span>{isAutoSession || isAutoMode ? tx(l, 'forceStopWatering') : tx(l, 'stopWatering')}</span>
             </button>
           ) : status === 'WATER NOW' ? (
             <button
               className="btn btn-prominent-action"
-              onClick={runWater}
-              disabled={!recommendation || start.isPending || appStale || state?.connectionStatus === 'offline'}
+              onClick={async () => {
+                if (esp32.isConnected && !esp32.data?.auto_pump) {
+                  try {
+                    await esp32.startPump();
+                    notify(l === 'te' ? 'నీటి చర్య ప్రారంభమైంది.' : l === 'hi' ? 'सिंचाई शुरू हुई।' : 'Watering session started.');
+                  } catch (err) {
+                    notify(errText(err));
+                  }
+                } else {
+                  runWater();
+                }
+              }}
+              disabled={(!recommendation && !esp32.data) || start.isPending || esp32.isCommandPending || appStale || (esp32.data?.auto_pump === true)}
               data-testid="button-start-irrigation"
             >
-              {start.isPending ? <LoaderCircle size={18} className="animate-spin" /> : <Droplets size={18} />}
+              {(start.isPending || esp32.isCommandPending) ? <LoaderCircle size={18} className="animate-spin" /> : <Droplets size={18} />}
               <span>
                 {tx(l, 'water')}
                 {recommendation?.durationMinutes ? ` (${recommendation.durationMinutes} ${tx(l, 'minutes')}${((state as any)?.schedule?.estimatedLitres ?? (recommendation as any)?.estimatedLitres) ? ` · ${((state as any)?.schedule?.estimatedLitres ?? (recommendation as any)?.estimatedLitres)} L` : ''})` : ''}
@@ -616,58 +641,129 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* 1. Local Sensor Telemetry Section */}
-      <section className="sensor-section-card" data-testid="section-local-sensors" aria-label="Local field sensors">
-        <div className="sensor-section-header">
-          <h2 className="sensor-section-title">{tx(l, 'localSensorsTitle')}</h2>
-          <p className="sensor-section-subtitle">{tx(l, 'localSensorsSub')}</p>
+      {/* 0. ESP32 Smart Hardware Controller Section */}
+      <section
+        className="sensor-section-card"
+        data-testid="section-esp32-controller"
+        aria-label="ESP32 Smart Hardware Controller"
+      >
+        <div className="sensor-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h2 className="sensor-section-title">{tx(l, 'esp32SectionTitle')}</h2>
+              <span
+                className={`esp32-badge-pill ${esp32.isConnected ? 'live' : esp32.isStale ? 'stale' : 'offline'}`}
+                data-testid="esp32-status-pill"
+              >
+                <span className={`live-pulse-dot ${esp32.isConnected ? '' : 'offline'}`} />
+                {esp32.isConnected
+                  ? tx(l, 'esp32StatusLive')
+                  : esp32.isStale
+                    ? tx(l, 'esp32StatusStale')
+                    : tx(l, 'esp32StatusOffline')}
+              </span>
+            </div>
+            <p className="sensor-section-subtitle">
+              {tx(l, 'esp32SectionSub')}
+            </p>
+          </div>
+
+          <div className="esp32-meta-chips">
+            <span className="esp32-chip" title="Device Name & Base URL">
+              <Radio size={12} />
+              <span>{esp32.data?.device || 'esp32-aquawise'}</span>
+              <span style={{ opacity: 0.7 }}>({esp32.esp32Url})</span>
+            </span>
+            {esp32.data?.uptime_ms != null && (
+              <span className="esp32-chip" title="Device Uptime">
+                <Clock size={12} />
+                <span>{tx(l, 'esp32Uptime')}: {formatUptime(esp32.data.uptime_ms)}</span>
+              </span>
+            )}
+            <Link href="/settings#esp32" className="text-button" style={{ fontSize: 12 }}>
+              <SlidersHorizontal size={13} /> {tx(l, 'settings')}
+            </Link>
+          </div>
         </div>
 
-        <div className="local-sensors-grid">
+        {/* Stale / Offline Notice Banner */}
+        {(!esp32.isConnected || esp32.isStale) && (
+          <div className="alert-banner error" style={{ marginBottom: 16 }} role="status">
+            <WifiOff size={16} />
+            <div style={{ flex: 1 }}>
+              <strong>{tx(l, 'esp32StatusOffline')}</strong>: {esp32.error || 'Cannot reach ESP32 HTTP server.'}
+              {esp32.lastUpdated && (
+                <span style={{ display: 'block', fontSize: 11, marginTop: 2, opacity: 0.85 }}>
+                  {tx(l, 'esp32LastSeen')}: {fmtTime(esp32.lastUpdated.toISOString())} ({tx(l, 'esp32StatusStale')})
+                </span>
+              )}
+            </div>
+            <button
+              className="btn btn-outline btn-small"
+              onClick={() => void esp32.refreshStatus()}
+              disabled={esp32.isLoading}
+            >
+              <RefreshCw size={13} className={esp32.isLoading ? 'animate-spin' : ''} /> {tx(l, 'retry')}
+            </button>
+          </div>
+        )}
+
+        {/* Real-Time Sensor Telemetry Grid */}
+        <div className="local-sensors-grid" data-testid="esp32-telemetry-grid" style={{ marginBottom: 16 }}>
           {/* Soil Moisture */}
-          <div className="local-sensor-card" data-testid="card-soil-moisture">
+          <div className="local-sensor-card" data-testid="esp32-soil-cell">
             <div className="local-sensor-card-header">
               <Droplets size={15} className="sensor-icon color-soil" />
               <span className="local-sensor-card-label">{tx(l, 'soilMoistureLabel')}</span>
             </div>
             <div className="local-sensor-card-value">
-              {state?.telemetry.soilMoisture == null ? '—' : `${state.telemetry.soilMoisture}%`}
+              {esp32.data?.soil_moisture_percent != null
+                ? `${esp32.data.soil_moisture_percent}%`
+                : '—'}
             </div>
             <div className="local-sensor-card-caption">
-              {state?.telemetry.soilMoisture == null
-                ? tx(l, 'noMoisture')
-                : `${tx(l, 'target')} ${state?.targetMoisture ?? '—'}% · ${tx(l, 'threshold')} ${state?.lowThreshold ?? '—'}%`}
+              {esp32.data?.soil_moisture_percent != null
+                ? (() => {
+                    const cat = getMoistureCategory(esp32.data?.soil_moisture_percent);
+                    const tagLabel = cat === 'dry' ? tx(l, 'moistureDry') : cat === 'moderate' ? tx(l, 'moistureModerate') : cat === 'wet' ? tx(l, 'moistureWet') : tx(l, 'moistureUnavailable');
+                    return `${tagLabel} · ${tx(l, 'esp32SoilRaw')}: ${esp32.data?.soil_raw ?? '—'}`;
+                  })()
+                : tx(l, 'noMoisture')}
             </div>
           </div>
 
           {/* Rain Sensor */}
-          <div className="local-sensor-card" data-testid="card-sensor-rain">
+          <div className="local-sensor-card" data-testid="esp32-rain-cell">
             <div className="local-sensor-card-header">
               <CloudRain size={15} className="sensor-icon color-rain" />
               <span className="local-sensor-card-label">{tx(l, 'sensorRainLabel')}</span>
             </div>
             <div className="local-sensor-card-value">
-              {state?.telemetry.rainingNow ? (
+              {esp32.data?.rain_detected === true ? (
                 <span className="status-text-highlight raining">{tx(l, 'sensorRaining')}</span>
-              ) : (
+              ) : esp32.data?.rain_detected === false ? (
                 <span className="status-text-highlight dry">{tx(l, 'sensorNoRain')}</span>
+              ) : (
+                '—'
               )}
             </div>
             <div className="local-sensor-card-caption">
-              {state?.telemetry.rainingNow
+              {esp32.data?.rain_detected === true
                 ? (l === 'te' ? 'వర్షం నమోదవుతోంది' : l === 'hi' ? 'बारिश सक्रिय है' : 'Precipitation detected')
-                : (l === 'te' ? 'నేలపైన వర్షం లేదు' : l === 'hi' ? 'कोई वर्षा नहीं' : 'No rain on sensor plate')}
+                : esp32.data?.rain_detected === false
+                  ? (l === 'te' ? 'నేలపైన వర్షం లేదు' : l === 'hi' ? 'कोई वर्षा नहीं' : 'No rain on sensor plate')
+                  : (l === 'te' ? 'సమాచారం లేదు' : l === 'hi' ? 'कोई डेटा नहीं' : 'No sensor data')}
             </div>
           </div>
 
           {/* Temperature Probe */}
-          <div className="local-sensor-card" data-testid="card-sensor-temperature">
+          <div className="local-sensor-card" data-testid="esp32-temp-cell">
             <div className="local-sensor-card-header">
               <Thermometer size={15} className="sensor-icon color-temp" />
               <span className="local-sensor-card-label">{tx(l, 'temperatureLabel')}</span>
             </div>
             <div className="local-sensor-card-value">
-              {state?.telemetry.temperatureC != null ? `${state.telemetry.temperatureC}°C` : '—'}
+              {esp32.data?.temperature_c != null ? `${esp32.data.temperature_c}°C` : '—'}
             </div>
             <div className="local-sensor-card-caption">
               {l === 'te' ? 'పొలంలో నేరుగా ఉష్ణోగ్రత' : l === 'hi' ? 'खेत का स्थानीय तापमान' : 'Field probe air temp'}
@@ -675,13 +771,13 @@ export function DashboardPage() {
           </div>
 
           {/* Humidity Probe */}
-          <div className="local-sensor-card" data-testid="card-sensor-humidity">
+          <div className="local-sensor-card" data-testid="esp32-humidity-cell">
             <div className="local-sensor-card-header">
               <Gauge size={15} className="sensor-icon color-humidity" />
               <span className="local-sensor-card-label">{tx(l, 'sensorHumidityLabel')}</span>
             </div>
             <div className="local-sensor-card-value">
-              {state?.telemetry.humidityPercent != null ? `${state.telemetry.humidityPercent}%` : '—'}
+              {esp32.data?.humidity_percent != null ? `${esp32.data.humidity_percent}%` : '—'}
             </div>
             <div className="local-sensor-card-caption">
               {l === 'te' ? 'గాలిలోని తేమ శాతం' : l === 'hi' ? 'हवा में नमी का स्तर' : 'Relative humidity'}
@@ -689,20 +785,193 @@ export function DashboardPage() {
           </div>
 
           {/* Sun Intensity Sensor */}
-          <div className="local-sensor-card" data-testid="card-sensor-sun-intensity">
+          <div className="local-sensor-card" data-testid="esp32-solar-cell">
             <div className="local-sensor-card-header">
               <Sun size={15} className="sensor-icon color-sun" />
               <span className="local-sensor-card-label">{tx(l, 'sunIntensity')}</span>
             </div>
             <div className="local-sensor-card-value">
-              {state?.telemetry.sunlightPercent != null ? `${state.telemetry.sunlightPercent}%` : '—'}
+              {(() => {
+                const intensity = esp32.data?.sun_intensity_percent
+                  ?? solarVoltageToSunIntensity(esp32.data?.solar_panel_voltage_v);
+                return intensity != null ? `${intensity}%` : '—';
+              })()}
             </div>
             <div className="local-sensor-card-caption">
               {l === 'te' ? 'సూర్యకాంతి తీవ్రత' : l === 'hi' ? 'सौर विकिरण सूचकांक' : 'Solar intensity index'}
+              {esp32.data?.solar_panel_voltage_v != null ? ` (${esp32.data.solar_panel_voltage_v.toFixed(2)} V)` : ''}
             </div>
           </div>
         </div>
+
+        {/* Authoritative Recommendation & Reason from ESP32 */}
+        {esp32.data && (
+          <div
+            className={`esp32-recommendation-banner ${
+              esp32.data.recommendation === 'WATER NOW'
+                ? 'water-now'
+                : esp32.data.recommendation === 'CHECK FIELD'
+                  ? 'check-field'
+                  : ''
+            }`}
+            data-testid="esp32-recommendation-banner"
+            style={{ marginBottom: 16 }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-primary)' }}>
+                  {tx(l, 'esp32HardwareRecommendation')}
+                </span>
+                <span className={`esp32-tag ${esp32.data.recommendation === 'WATER NOW' ? 'dry' : esp32.data.recommendation === 'CHECK FIELD' ? 'moderate' : 'wet'}`}>
+                  {esp32.data.recommendation}
+                </span>
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--text-heading)', fontWeight: 500 }}>
+                {esp32.data.reason}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Pump Controls & Mode Switcher Grid */}
+        <div className="esp32-control-panel" style={{ margin: 0 }}>
+          {/* Box 1: Mode Switcher */}
+          <div className="esp32-mode-box">
+            <div className="esp32-box-header">
+              <span>{tx(l, 'control')}</span>
+              <span className={`esp32-tag ${esp32.data?.auto_pump ? 'wet' : 'moderate'}`}>
+                {esp32.data?.auto_pump ? tx(l, 'esp32AutoModeOn') : tx(l, 'esp32AutoModeOff')}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {esp32.data?.auto_pump ? tx(l, 'controlHelp') : tx(l, 'operationLimit')}
+            </div>
+            <div className="esp32-actions-row">
+              <button
+                type="button"
+                className={`btn ${esp32.data?.auto_pump ? 'btn-outline' : 'btn-primary'} btn-small`}
+                onClick={async () => {
+                  try {
+                    await esp32.toggleAuto();
+                    notify(tx(l, 'settingsSaved'));
+                  } catch (err) {
+                    notify(errText(err));
+                  }
+                }}
+                disabled={esp32.isCommandPending || !esp32.isConnected}
+                data-testid="button-esp32-toggle-auto"
+              >
+                {esp32.isCommandPending ? (
+                  <LoaderCircle size={14} className="animate-spin" />
+                ) : (
+                  <Power size={14} />
+                )}
+                <span>
+                  {esp32.data?.auto_pump ? tx(l, 'esp32SwitchToManual') : tx(l, 'esp32SwitchToAuto')}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Box 2: Pump Control & Safety Interlocks */}
+          <div className="esp32-pump-box">
+            <div className="esp32-box-header">
+              <span>{tx(l, 'irrigation')}</span>
+              {esp32.data?.pump_running ? (
+                <span className="pump-active-indicator" data-testid="esp32-pump-active">
+                  <Droplet size={15} />
+                  <span>{tx(l, 'esp32PumpRunning')}</span>
+                </span>
+              ) : (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {tx(l, 'esp32PumpStopped')}
+                </span>
+              )}
+            </div>
+
+            {/* Dry Count Confirmation Progress Meter */}
+            {esp32.data && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-subtle)', marginBottom: 2 }}>
+                  <span>{tx(l, 'esp32DryCountProgress')}</span>
+                  <span>{esp32.data.dry_count} / {esp32.data.confirm_samples} {tx(l, 'esp32DrySamples')}</span>
+                </div>
+                <div className="esp32-progress-bar">
+                  <div
+                    className="esp32-progress-fill"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, (esp32.data.dry_count / Math.max(1, esp32.data.confirm_samples)) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Pump Actions */}
+            <div className="esp32-actions-row">
+              {esp32.data?.pump_running ? (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-small"
+                  onClick={async () => {
+                    try {
+                      await esp32.stopPump();
+                      notify(tx(l, 'stopWatering'));
+                    } catch (err) {
+                      notify(errText(err));
+                    }
+                  }}
+                  disabled={esp32.isCommandPending || !esp32.isConnected}
+                  data-testid="button-esp32-stop-pump"
+                >
+                  {esp32.isCommandPending ? <LoaderCircle size={14} className="animate-spin" /> : <Droplet size={14} />}
+                  <span>{tx(l, 'esp32StopPump')}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-small"
+                  onClick={async () => {
+                    try {
+                      await esp32.startPump();
+                      notify(tx(l, 'activeSession'));
+                    } catch (err) {
+                      notify(errText(err));
+                    }
+                  }}
+                  disabled={esp32.data?.auto_pump === true || esp32.isCommandPending || !esp32.isConnected}
+                  data-testid="button-esp32-start-pump"
+                  title={esp32.data?.auto_pump ? tx(l, 'esp32AutoModeWarning') : tx(l, 'esp32StartPump')}
+                >
+                  {esp32.isCommandPending ? <LoaderCircle size={14} className="animate-spin" /> : <Droplets size={14} />}
+                  <span>{tx(l, 'esp32StartPump')}</span>
+                </button>
+              )}
+
+              {esp32.data?.auto_pump && !esp32.data?.pump_running && (
+                <span style={{ fontSize: 11, color: 'var(--text-subtle)', fontStyle: 'italic' }}>
+                  {tx(l, 'esp32AutoModeWarning')}
+                </span>
+              )}
+            </div>
+
+            <div className="esp32-safety-note">
+              <ShieldCheck size={13} color="var(--color-primary)" />
+              <span>{tx(l, 'esp32SafetyLimitNotice')}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Command Error Alert (if any) */}
+        {esp32.commandError && (
+          <div className="alert-banner error" style={{ marginTop: 16 }} role="alert">
+            <AlertTriangle size={16} />
+            <span style={{ flex: 1 }}>{esp32.commandError}</span>
+          </div>
+        )}
       </section>
+
+
 
       {/* 2. Google Weather API Section (No soil moisture) */}
       <section className="sensor-section-card" data-testid="section-google-weather-api" aria-label="Google Weather API forecast">
@@ -812,9 +1081,30 @@ export function DashboardPage() {
 // ==========================================
 // 2. INSIGHTS SCREEN (Progressive Disclosure)
 // ==========================================
-function Chart({ data }: { data: Analytics }) {
-  const history = data.history || [];
-  const forecast = data.forecast || [];
+function Chart({ data, liveMoisture }: { data: Analytics; liveMoisture?: number | null }) {
+  let history = [...(data.history || [])];
+  let forecast = [...(data.forecast || [])];
+
+  // If live sensor moisture reading exists, anchor the latest observed reading and align forecast
+  if (liveMoisture != null && !isNaN(liveMoisture)) {
+    if (history.length > 0) {
+      history[history.length - 1] = {
+        ...history[history.length - 1],
+        moisturePercent: liveMoisture,
+      };
+    } else {
+      history = [{ at: new Date().toISOString(), moisturePercent: liveMoisture }];
+    }
+
+    if (forecast.length > 0) {
+      const origStart = forecast[0].moisturePercent;
+      const offset = liveMoisture - origStart;
+      forecast = forecast.map((f) => ({
+        ...f,
+        moisturePercent: Math.max(0, Math.min(100, Math.round((f.moisturePercent + offset) * 10) / 10)),
+      }));
+    }
+  }
 
   // Bounded Y-scale: 0% at y=180, 100% at y=25 (height 155px)
   const getY = (val: number) => {
@@ -887,11 +1177,16 @@ function Chart({ data }: { data: Analytics }) {
 export function AnalyticsPage() {
   const { lang } = useAquaWise();
   const l = lang as 'en' | 'te' | 'hi';
-  const query = useGetAnalytics({ query: { queryKey: getGetAnalyticsQueryKey(), refetchInterval: 60_000 } });
+  const esp32 = useESP32();
+  const query = useGetAnalytics({ query: { queryKey: getGetAnalyticsQueryKey(), refetchInterval: 10_000 } });
   const rec = useGetRecommendation({ query: { queryKey: getGetRecommendationQueryKey(), refetchInterval: 60_000 } });
   const field = useGetFieldState({ query: { queryKey: getGetFieldStateQueryKey(), refetchInterval: 60_000 } });
   const data = query.data;
   const recommendation = rec.data;
+
+  const liveMoisture = (esp32.isConnected && esp32.data?.soil_moisture_percent != null)
+    ? esp32.data.soil_moisture_percent
+    : (field.data?.telemetry.soilMoisture ?? null);
 
   // Collapsible sections
   const [showStrategies, setShowStrategies] = useState(false);
@@ -922,7 +1217,15 @@ export function AnalyticsPage() {
           <section className="calm-card" data-testid="chart-moisture">
             <div className="section-header">
               <div>
-                <h2 className="section-title-clean">{tx(l, 'moisture')}</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h2 className="section-title-clean">{tx(l, 'moisture')}</h2>
+                  {liveMoisture != null && (
+                    <span className="esp32-badge-pill live" style={{ fontSize: 11, padding: '2px 8px' }}>
+                      <span className="live-pulse-dot" />
+                      {liveMoisture}% Live
+                    </span>
+                  )}
+                </div>
                 <p className="section-subtitle-clean">
                   {tx(l, 'forecastLabel')}: {data.forecastLabel}
                 </p>
@@ -933,14 +1236,14 @@ export function AnalyticsPage() {
               </div>
             </div>
 
-            {(!data.history?.length && !data.forecast?.length) ? (
+            {(!data.history?.length && !data.forecast?.length && liveMoisture == null) ? (
               <div className="empty-state">
                 <Leaf size={28} />
                 <h3>{tx(l, 'noHistory')}</h3>
                 <p>{tx(l, 'noForecast')}</p>
               </div>
             ) : (
-              <Chart data={data} />
+              <Chart data={data} liveMoisture={liveMoisture} />
             )}
           </section>
 
@@ -1384,6 +1687,63 @@ export function SettingsPage() {
   const scenario = useApplyTestScenario();
   const reset = useResetField();
 
+  // ESP32 Hardware settings state
+  const esp32 = useESP32();
+  const [esp32UrlInput, setEsp32UrlInput] = useState(esp32.esp32Url);
+  const [esp32ModeInput, setEsp32ModeInput] = useState(esp32.connectionMode);
+  const [testTesting, setTestTesting] = useState(false);
+  const [testStatusFeedback, setTestStatusFeedback] = useState<{
+    success: boolean;
+    message: string;
+    latencyMs?: number;
+    device?: string;
+    uptime?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (esp32.esp32Url) {
+      setEsp32UrlInput(esp32.esp32Url);
+    }
+    setEsp32ModeInput(esp32.connectionMode);
+  }, [esp32.esp32Url, esp32.connectionMode]);
+
+  const handleTestConnection = async () => {
+    setTestTesting(true);
+    setTestStatusFeedback(null);
+    const start = performance.now();
+    try {
+      const res = await fetchESP32Status(esp32UrlInput, esp32ModeInput);
+      const latency = Math.round(performance.now() - start);
+      setTestStatusFeedback({
+        success: true,
+        message: tx(l, 'esp32ConnectionSuccess'),
+        latencyMs: latency,
+        device: res.device,
+        uptime: formatUptime(res.uptime_ms),
+      });
+      notify(tx(l, 'esp32ConnectionSuccess'));
+    } catch (err: any) {
+      setTestStatusFeedback({
+        success: false,
+        message: `${tx(l, 'esp32ConnectionFailed')} ${err.message || ''}`,
+      });
+      notify(`${tx(l, 'esp32ConnectionFailed')}`);
+    } finally {
+      setTestTesting(false);
+    }
+  };
+
+  const handleSaveHardwareSettings = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      esp32.setConnectionMode(esp32ModeInput);
+      await esp32.setEsp32Url(esp32UrlInput);
+      notify(tx(l, 'settingsSaved'));
+    } catch (err: any) {
+      notify(errText(err));
+    }
+  };
+
   // Local settings state
   const [form, setForm] = useState<SettingsInput | null>(null);
   useEffect(() => {
@@ -1479,6 +1839,7 @@ export function SettingsPage() {
     }
     (point === 'dry' ? setDry : setWet)(String(moisture));
   };
+
 
   const handleCalibSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -1747,7 +2108,96 @@ export function SettingsPage() {
             </div>
           </form>
 
-          {/* Section 4: Guided Field Setup & Soil Calibration */}
+          {/* Section 4: ESP32 Smart Hardware Configuration */}
+          <div className="calm-card" id="esp32" data-testid="section-esp32-settings">
+            <div className="section-header" style={{ marginBottom: 16 }}>
+              <div>
+                <h2 className="section-title-clean">{tx(l, 'esp32SectionTitle')}</h2>
+                <p className="section-subtitle-clean">{tx(l, 'esp32SectionSub')}</p>
+              </div>
+              <Cpu size={22} color="#1b4332" />
+            </div>
+
+            <form onSubmit={handleSaveHardwareSettings} data-testid="form-esp32-settings">
+              <div className="form-fields-grid">
+                <div className="form-control">
+                  <label htmlFor="esp32-url">{tx(l, 'esp32DeviceAddress')}</label>
+                  <input
+                    id="esp32-url"
+                    type="text"
+                    value={esp32UrlInput}
+                    onChange={(e) => setEsp32UrlInput(e.target.value)}
+                    placeholder="http://192.168.4.1"
+                    required
+                    data-testid="input-esp32-url"
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 4 }}>
+                    Enter the local IP address or hostname of your ESP32 device on the Wi-Fi network.
+                  </span>
+                </div>
+
+                <div className="form-control">
+                  <label htmlFor="esp32-mode">{tx(l, 'esp32ConnectionMode')}</label>
+                  <select
+                    id="esp32-mode"
+                    value={esp32ModeInput}
+                    onChange={(e) => setEsp32ModeInput(e.target.value as 'proxy' | 'direct')}
+                    data-testid="select-esp32-mode"
+                  >
+                    <option value="proxy">{tx(l, 'esp32ProxyMode')}</option>
+                    <option value="direct">{tx(l, 'esp32DirectMode')}</option>
+                  </select>
+                  <span style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 4 }}>
+                    {esp32ModeInput === 'proxy'
+                      ? 'Routes requests through AquaWise backend to eliminate HTTPS mixed-content & CORS blocking.'
+                      : 'Direct HTTP connection from browser to ESP32 (requires plain HTTP and CORS enabled on device).'}
+                  </span>
+                </div>
+              </div>
+
+              {testStatusFeedback && (
+                <div
+                  className={`alert-banner ${testStatusFeedback.success ? 'info' : 'error'}`}
+                  style={{ marginTop: 14 }}
+                  role="status"
+                >
+                  {testStatusFeedback.success ? <Check size={16} /> : <AlertTriangle size={16} />}
+                  <div style={{ flex: 1 }}>
+                    <strong>{testStatusFeedback.message}</strong>
+                    {testStatusFeedback.success && (
+                      <div style={{ fontSize: 11, marginTop: 3 }}>
+                        Device: {testStatusFeedback.device} · Latency: {testStatusFeedback.latencyMs}ms · Uptime: {testStatusFeedback.uptime}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ marginTop: 20, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  data-testid="button-save-esp32-settings"
+                >
+                  <Check size={16} />
+                  <span>{tx(l, 'saveSettings')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleTestConnection}
+                  disabled={testTesting}
+                  data-testid="button-test-esp32-connection"
+                >
+                  {testTesting ? <LoaderCircle size={16} className="animate-spin" /> : <Radio size={16} />}
+                  <span>{testTesting ? tx(l, 'loading') : tx(l, 'esp32TestConnection')}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Section 5: Guided Field Setup & Soil Calibration */}
           <div className="calm-card" id="calibration">
             <div className="section-header">
               <div>
