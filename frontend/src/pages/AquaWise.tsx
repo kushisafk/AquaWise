@@ -14,9 +14,9 @@ import te from '@/locales/te';
 import hi from '@/locales/hi';
 import { useAquaWise, tr } from '@/App';
 import {
-  AlertTriangle, ArrowRight, Check, ChevronDown, CloudRain,
-  Droplet, Droplets, History, Info, Leaf, LoaderCircle, RefreshCw,
-  RotateCcw, ShieldCheck, SlidersHorizontal, Sprout, Sun,
+  AlertTriangle, ArrowRight, Check, ChevronDown, CloudLightning, CloudRain, CloudSun,
+  Droplet, Droplets, Gauge, History, Info, Leaf, LoaderCircle, RefreshCw,
+  RotateCcw, ShieldCheck, SlidersHorizontal, Sprout, Sun, Thermometer,
   ThumbsDown, ThumbsUp, Volume2, WifiOff
 } from 'lucide-react';
 import { Link } from 'wouter';
@@ -520,58 +520,176 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* Supporting Information: Exactly 3 Compact Metrics */}
-      <section className="calm-metrics-strip" aria-label="Field overview metrics">
-        <div className="calm-metric-unit" data-testid="card-soil-moisture">
-          <div className="calm-metric-header">
-            <Droplets size={14} className="metric-icon" />
-            <span className="metric-label">{tx(l, 'soilMoistureLabel')}</span>
+      {/* 1. Local Sensor Telemetry Section */}
+      <section className="sensor-section-card" data-testid="section-local-sensors" aria-label="Local field sensors">
+        <div className="sensor-section-header">
+          <div className="sensor-section-title-group">
+            <div className="section-badge-pill sensor-badge">
+              <span className="live-pulse-dot" />
+              <span>{tx(l, 'localSensorsTitle')}</span>
+            </div>
+            <p className="sensor-section-subtitle">{tx(l, 'localSensorsSub')}</p>
           </div>
-          <div className="calm-metric-number">
-            {state?.telemetry.soilMoisture == null ? '—' : `${state.telemetry.soilMoisture}%`}
-          </div>
-          <div className="calm-metric-caption">
-            {state?.telemetry.soilMoisture == null
-              ? tx(l, 'noMoisture')
-              : `${tx(l, 'target')} ${state?.targetMoisture ?? '—'}% · ${tx(l, 'threshold')} ${state?.lowThreshold ?? '—'}%`}
-          </div>
+          <span className="source-tag">{state?.telemetry.provenance === 'simulated' ? 'SIMULATED SENSORS' : 'LOCAL HARDWARE'}</span>
         </div>
 
-        <div className="calm-metric-separator" />
+        <div className="local-sensors-grid">
+          {/* Soil Moisture */}
+          <div className="local-sensor-card" data-testid="card-soil-moisture">
+            <div className="local-sensor-card-header">
+              <Droplets size={15} className="sensor-icon color-soil" />
+              <span className="local-sensor-card-label">{tx(l, 'soilMoistureLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {state?.telemetry.soilMoisture == null ? '—' : `${state.telemetry.soilMoisture}%`}
+            </div>
+            <div className="local-sensor-card-caption">
+              {state?.telemetry.soilMoisture == null
+                ? tx(l, 'noMoisture')
+                : `${tx(l, 'target')} ${state?.targetMoisture ?? '—'}% · ${tx(l, 'threshold')} ${state?.lowThreshold ?? '—'}%`}
+            </div>
+          </div>
 
-        <div className="calm-metric-unit" data-testid="card-temperature">
-          <div className="calm-metric-header">
-            <Sun size={14} className="metric-icon" />
-            <span className="metric-label">{tx(l, 'temperatureLabel')}</span>
+          {/* Rain Sensor */}
+          <div className="local-sensor-card" data-testid="card-sensor-rain">
+            <div className="local-sensor-card-header">
+              <CloudRain size={15} className="sensor-icon color-rain" />
+              <span className="local-sensor-card-label">{tx(l, 'sensorRainLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {state?.telemetry.rainingNow ? (
+                <span className="status-text-highlight raining">{tx(l, 'sensorRaining')}</span>
+              ) : (
+                <span className="status-text-highlight dry">{tx(l, 'sensorNoRain')}</span>
+              )}
+            </div>
+            <div className="local-sensor-card-caption">
+              {state?.telemetry.rainingNow
+                ? (l === 'te' ? 'వర్షం నమోదవుతోంది' : l === 'hi' ? 'बारिश सक्रिय है' : 'Precipitation detected')
+                : (l === 'te' ? 'నేలపైన వర్షం లేదు' : l === 'hi' ? 'कोई वर्षा नहीं' : 'No rain on sensor plate')}
+            </div>
           </div>
-          <div className="calm-metric-number">
-            {weather.data?.temperatureC != null
-              ? `${weather.data.temperatureC}°C`
-              : state?.telemetry.temperatureC != null
-                ? `${state.telemetry.temperatureC}°`
-                : '—'}
+
+          {/* Temperature Probe */}
+          <div className="local-sensor-card" data-testid="card-sensor-temperature">
+            <div className="local-sensor-card-header">
+              <Thermometer size={15} className="sensor-icon color-temp" />
+              <span className="local-sensor-card-label">{tx(l, 'temperatureLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {state?.telemetry.temperatureC != null ? `${state.telemetry.temperatureC}°C` : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {l === 'te' ? 'పొలంలో నేరుగా ఉష్ణోగ్రత' : l === 'hi' ? 'खेत का स्थानीय तापमान' : 'Field probe air temp'}
+            </div>
           </div>
-          <div className="calm-metric-caption">
-            {weather.data?.summary
-              ? localizedWeatherSummary(weather.data.summary, l)
-              : (l === 'te' ? 'సాధారణ ఉష్ణోగ్రత' : l === 'hi' ? 'सामान्य तापमान' : 'Normal range')}
+
+          {/* Humidity Probe */}
+          <div className="local-sensor-card" data-testid="card-sensor-humidity">
+            <div className="local-sensor-card-header">
+              <Gauge size={15} className="sensor-icon color-humidity" />
+              <span className="local-sensor-card-label">{tx(l, 'sensorHumidityLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {state?.telemetry.humidityPercent != null ? `${state.telemetry.humidityPercent}%` : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {l === 'te' ? 'గాలిలోని తేమ శాతం' : l === 'hi' ? 'हवा में नमी का स्तर' : 'Relative humidity'}
+            </div>
+          </div>
+
+          {/* Sun Intensity Sensor */}
+          <div className="local-sensor-card" data-testid="card-sensor-sun-intensity">
+            <div className="local-sensor-card-header">
+              <Sun size={15} className="sensor-icon color-sun" />
+              <span className="local-sensor-card-label">{tx(l, 'sunIntensity')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {state?.telemetry.sunlightPercent != null ? `${state.telemetry.sunlightPercent}%` : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {l === 'te' ? 'సూర్యకాంతి తీవ్రత' : l === 'hi' ? 'सौर विकिरण सूचकांक' : 'Solar intensity index'}
+            </div>
           </div>
         </div>
+      </section>
 
-        <div className="calm-metric-separator" />
+      {/* 2. Google Weather API Section (No soil moisture) */}
+      <section className="sensor-section-card weather-api-section" data-testid="section-google-weather-api" aria-label="Google Weather API forecast">
+        <div className="sensor-section-header">
+          <div className="sensor-section-title-group">
+            <div className="section-badge-pill weather-badge">
+              <CloudSun size={14} />
+              <span>{tx(l, 'weatherApiTitle')}</span>
+            </div>
+            <p className="sensor-section-subtitle">{tx(l, 'weatherApiSub')}</p>
+          </div>
+          <span className="source-tag">{weather.data?.source || 'Google Weather API'}</span>
+        </div>
 
-        <div className="calm-metric-unit" data-testid="card-weather">
-          <div className="calm-metric-header">
-            <CloudRain size={14} className="metric-icon" />
-            <span className="metric-label">{tx(l, 'upcomingRainLabel')}</span>
+        <div className="google-weather-grid">
+          {/* Forecast Temperature & Outlook */}
+          <div className="local-sensor-card" data-testid="card-temperature">
+            <div className="local-sensor-card-header">
+              <Sun size={15} className="sensor-icon color-sun" />
+              <span className="local-sensor-card-label">{tx(l, 'temperatureLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {weather.data?.temperatureC != null ? `${weather.data.temperatureC}°C` : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {weather.data?.summary
+                ? localizedWeatherSummary(weather.data.summary, l)
+                : (l === 'te' ? 'సాధారణ ఉష్ణోగ్రత' : l === 'hi' ? 'सामान्य तापमान' : 'Normal range')}
+            </div>
           </div>
-          <div className="calm-metric-number">
-            {weather.data?.precipitationMm6h != null ? `${weather.data.precipitationMm6h} mm` : '0 mm'}
+
+          {/* Expected Rain Volume (6h) */}
+          <div className="local-sensor-card" data-testid="card-weather">
+            <div className="local-sensor-card-header">
+              <CloudRain size={15} className="sensor-icon color-rain" />
+              <span className="local-sensor-card-label">{tx(l, 'forecastRainVolume')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {weather.data?.precipitationMm6h != null ? `${weather.data.precipitationMm6h} mm` : '0 mm'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {weather.data?.rainProbability6h != null
+                ? `${weather.data.rainProbability6h}% ${tx(l, 'rainChance')}`
+                : (l === 'te' ? 'రాబోయే 6 గంటలు' : l === 'hi' ? 'अगले 6 घंटे' : 'Next 6 hours')}
+            </div>
           </div>
-          <div className="calm-metric-caption">
-            {weather.data?.rainProbability6h != null
-              ? `${weather.data.rainProbability6h}% ${tx(l, 'rainChance')}`
-              : (l === 'te' ? 'రాబోయే 6 గంటలు' : l === 'hi' ? 'अगले 6 घंटे' : 'Next 6 hours')}
+
+          {/* Rain Probability (6h) */}
+          <div className="local-sensor-card" data-testid="card-weather-rain-probability">
+            <div className="local-sensor-card-header">
+              <CloudLightning size={15} className="sensor-icon color-humidity" />
+              <span className="local-sensor-card-label">{tx(l, 'rainChance')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {weather.data?.rainProbability6h != null ? `${weather.data.rainProbability6h}%` : '0%'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {weather.data?.rainingNow
+                ? (l === 'te' ? 'ప్రస్తుతం వర్షం' : l === 'hi' ? 'अभी बारिश' : 'Rain currently active')
+                : (weather.data?.rainProbability6h ?? 0) >= 50
+                  ? (l === 'te' ? 'వర్షం వచ్చే అవకాశం ఉంది' : l === 'hi' ? 'जल्द बारिश की संभावना' : 'Rain likely soon')
+                  : (l === 'te' ? 'వర్షం అవకాశం తక్కువ' : l === 'hi' ? 'बारिश की कम संभावना' : 'Low chance of rain')}
+            </div>
+          </div>
+
+          {/* Forecast Humidity */}
+          <div className="local-sensor-card" data-testid="card-weather-humidity">
+            <div className="local-sensor-card-header">
+              <Droplets size={15} className="sensor-icon color-soil" />
+              <span className="local-sensor-card-label">{tx(l, 'sensorHumidityLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {weather.data?.humidityPercent != null ? `${weather.data.humidityPercent}%` : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {l === 'te' ? 'వాతావరణ తేమ' : l === 'hi' ? 'वायुमंडलीय आर्द्रता' : 'Regional atmosphere'}
+            </div>
           </div>
         </div>
       </section>

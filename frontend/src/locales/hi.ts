@@ -58,6 +58,16 @@ const page = {
   scenarioActiveWatering: '9. सिंचाई जारी है', scenarioTargetReached: '10. लक्ष्य नमी पूरी हुई',
   cropType: 'फसल का प्रकार', cropSelectPlaceholder: 'फसल चुनें...', assumedSoilType: 'अनुमानित मिट्टी का प्रकार',
   soilAssumptionNote: 'फसल के प्रकार से अनुमानित (केवल जानकारी के लिए)',
+  localSensorsTitle: 'लोकल सेंसर (Local Sensor)',
+  localSensorsSub: 'खेत के सेंसरों से सीधा लाइव डेटा',
+  weatherApiTitle: 'गूगल वेदर API (Google Weather API)',
+  weatherApiSub: 'लाइव मौसम पूर्वानुमान और बारिश रडार',
+  sunIntensity: 'धूप की तीव्रता',
+  sensorRainLabel: 'बारिश सेंसर',
+  sensorRaining: 'बारिश हो रही है',
+  sensorNoRain: 'बारिश नहीं है',
+  sensorHumidityLabel: 'खेत की आर्द्रता',
+  forecastRainVolume: 'अनुमानित बारिश (6 घंटे)',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

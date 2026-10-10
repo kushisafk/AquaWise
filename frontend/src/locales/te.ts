@@ -58,6 +58,16 @@ const page = {
   scenarioActiveWatering: '9. నీరు పారుతోంది', scenarioTargetReached: '10. లక్ష్య తేమ చేరింది',
   cropType: 'పంట రకం', cropSelectPlaceholder: 'పంటను ఎంచుకోండి...', assumedSoilType: 'అంచనా వేసిన నేల రకం',
   soilAssumptionNote: 'పంట రకం ఆధారంగా అంచనా వేయబడింది (సమాచారం కోసం మాత్రమే)',
+  localSensorsTitle: 'లోకల్ సెన్సార్లు (Local Sensor)',
+  localSensorsSub: 'పొలంలోని సెన్సార్ల నుండి ప్రత్యక్ష రీడింగ్‌లు',
+  weatherApiTitle: 'గూగుల్ వెదర్ API (Google Weather API)',
+  weatherApiSub: 'ప్రత్యక్ష వాతావరణ అంచనాలు మరియు వర్షం సూచన',
+  sunIntensity: 'సూర్యరశ్మి తీవ్రత',
+  sensorRainLabel: 'వర్షం సెన్సార్',
+  sensorRaining: 'వర్షం పడుతోంది',
+  sensorNoRain: 'వర్షం లేదు',
+  sensorHumidityLabel: 'పొలంలో తేమ',
+  forecastRainVolume: 'వర్షం పరిమాణం (6 గంటలు)',
 } as const;
 
 const dictionary = { ...common, ...page } as const;

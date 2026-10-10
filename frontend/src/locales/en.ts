@@ -58,6 +58,16 @@ const page = {
   scenarioActiveWatering: '9. Active watering', scenarioTargetReached: '10. Target moisture reached',
   cropType: 'Crop type', cropSelectPlaceholder: 'Select crop...', assumedSoilType: 'Assumed soil type',
   soilAssumptionNote: 'Estimated from crop type (informational only)',
+  localSensorsTitle: 'Local Sensor',
+  localSensorsSub: 'Live telemetry collected from in-field sensors',
+  weatherApiTitle: 'Google Weather API',
+  weatherApiSub: 'Live regional weather forecast & radar',
+  sunIntensity: 'Sun intensity',
+  sensorRainLabel: 'Rain sensor',
+  sensorRaining: 'Raining',
+  sensorNoRain: 'No rain',
+  sensorHumidityLabel: 'Field humidity',
+  forecastRainVolume: 'Rain volume (6h)',
 } as const;
 
 const dictionary = { ...common, ...page } as const;
