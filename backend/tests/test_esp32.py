@@ -162,3 +162,37 @@ def test_esp32_proxy_conflict_error_forwarding(client, monkeypatch):
     resp = client.post("/api/esp32/pump/start")
     assert resp.status_code == 409
     assert "Pump already running" in resp.json()["detail"]
+
+
+def test_esp32_telemetry_stored_and_reflected_in_analytics(client):
+    # Submit live sensor data
+    tel_resp = client.post(
+        "/api/esp32/telemetry",
+        json={
+            "soil_moisture_percent": 48.5,
+            "temperature_c": 29.0,
+            "humidity_percent": 55.0,
+            "solar_panel_voltage_v": 4.8,
+            "rain_detected": False,
+        },
+    )
+    assert tel_resp.status_code == 200
+    assert tel_resp.json()["snapshot"]["soil_moisture"] == 48.5
+
+    # Verify field state uses live hardware sensor reading
+    field_resp = client.get("/api/field")
+    assert field_resp.status_code == 200
+    field_data = field_resp.json()
+    assert field_data["telemetry"]["soilMoisture"] == 48.5
+    assert field_data["telemetry"]["provenance"] == "hardware"
+
+    # Verify analytics graph uses the live sensor moisture for history and forecast
+    analytics_resp = client.get("/api/analytics")
+    assert analytics_resp.status_code == 200
+    analytics_data = analytics_resp.json()
+    assert len(analytics_data["history"]) >= 1
+    assert analytics_data["history"][-1]["moisturePercent"] == 48.5
+    # Forecast starts from live moisture level
+    assert len(analytics_data["forecast"]) >= 1
+    assert abs(analytics_data["forecast"][0]["moisturePercent"] - 48.5) < 3.0
+

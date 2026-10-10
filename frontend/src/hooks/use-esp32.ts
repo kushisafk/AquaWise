@@ -10,6 +10,7 @@ import {
   setStoredConnectionMode,
   fetchESP32Config,
   saveESP32Config,
+  syncESP32Telemetry,
   type ESP32Status,
   type ESP32ConnectionMode,
 } from '@/lib/esp32';
@@ -51,6 +52,8 @@ export function useESP32(): UseESP32Return {
   const abortControllerRef = useRef<AbortController | null>(null);
   const urlRef = useRef<string>(esp32Url);
   const modeRef = useRef<ESP32ConnectionMode>(connectionMode);
+  const lastSyncTsRef = useRef<number>(0);
+  const lastSyncedMoistureRef = useRef<number | null>(null);
 
   urlRef.current = esp32Url;
   modeRef.current = connectionMode;
@@ -91,6 +94,16 @@ export function useESP32(): UseESP32Return {
       setIsLoading(false);
       setLastUpdated(new Date());
       setError(null);
+
+      // Periodically sync live sensor reading to backend database
+      if (status.soil_moisture_percent != null) {
+        const now = Date.now();
+        if (now - lastSyncTsRef.current > 10_000 || lastSyncedMoistureRef.current !== status.soil_moisture_percent) {
+          lastSyncTsRef.current = now;
+          lastSyncedMoistureRef.current = status.soil_moisture_percent;
+          void syncESP32Telemetry(status);
+        }
+      }
     } catch (err: any) {
       if (err.name === 'AbortError') {
         return;

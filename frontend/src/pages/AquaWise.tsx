@@ -1081,9 +1081,30 @@ export function DashboardPage() {
 // ==========================================
 // 2. INSIGHTS SCREEN (Progressive Disclosure)
 // ==========================================
-function Chart({ data }: { data: Analytics }) {
-  const history = data.history || [];
-  const forecast = data.forecast || [];
+function Chart({ data, liveMoisture }: { data: Analytics; liveMoisture?: number | null }) {
+  let history = [...(data.history || [])];
+  let forecast = [...(data.forecast || [])];
+
+  // If live sensor moisture reading exists, anchor the latest observed reading and align forecast
+  if (liveMoisture != null && !isNaN(liveMoisture)) {
+    if (history.length > 0) {
+      history[history.length - 1] = {
+        ...history[history.length - 1],
+        moisturePercent: liveMoisture,
+      };
+    } else {
+      history = [{ at: new Date().toISOString(), moisturePercent: liveMoisture }];
+    }
+
+    if (forecast.length > 0) {
+      const origStart = forecast[0].moisturePercent;
+      const offset = liveMoisture - origStart;
+      forecast = forecast.map((f) => ({
+        ...f,
+        moisturePercent: Math.max(0, Math.min(100, Math.round((f.moisturePercent + offset) * 10) / 10)),
+      }));
+    }
+  }
 
   // Bounded Y-scale: 0% at y=180, 100% at y=25 (height 155px)
   const getY = (val: number) => {
@@ -1156,11 +1177,16 @@ function Chart({ data }: { data: Analytics }) {
 export function AnalyticsPage() {
   const { lang } = useAquaWise();
   const l = lang as 'en' | 'te' | 'hi';
-  const query = useGetAnalytics({ query: { queryKey: getGetAnalyticsQueryKey(), refetchInterval: 60_000 } });
+  const esp32 = useESP32();
+  const query = useGetAnalytics({ query: { queryKey: getGetAnalyticsQueryKey(), refetchInterval: 10_000 } });
   const rec = useGetRecommendation({ query: { queryKey: getGetRecommendationQueryKey(), refetchInterval: 60_000 } });
   const field = useGetFieldState({ query: { queryKey: getGetFieldStateQueryKey(), refetchInterval: 60_000 } });
   const data = query.data;
   const recommendation = rec.data;
+
+  const liveMoisture = (esp32.isConnected && esp32.data?.soil_moisture_percent != null)
+    ? esp32.data.soil_moisture_percent
+    : (field.data?.telemetry.soilMoisture ?? null);
 
   // Collapsible sections
   const [showStrategies, setShowStrategies] = useState(false);
@@ -1191,7 +1217,15 @@ export function AnalyticsPage() {
           <section className="calm-card" data-testid="chart-moisture">
             <div className="section-header">
               <div>
-                <h2 className="section-title-clean">{tx(l, 'moisture')}</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h2 className="section-title-clean">{tx(l, 'moisture')}</h2>
+                  {liveMoisture != null && (
+                    <span className="esp32-badge-pill live" style={{ fontSize: 11, padding: '2px 8px' }}>
+                      <span className="live-pulse-dot" />
+                      {liveMoisture}% Live
+                    </span>
+                  )}
+                </div>
                 <p className="section-subtitle-clean">
                   {tx(l, 'forecastLabel')}: {data.forecastLabel}
                 </p>
@@ -1202,14 +1236,14 @@ export function AnalyticsPage() {
               </div>
             </div>
 
-            {(!data.history?.length && !data.forecast?.length) ? (
+            {(!data.history?.length && !data.forecast?.length && liveMoisture == null) ? (
               <div className="empty-state">
                 <Leaf size={28} />
                 <h3>{tx(l, 'noHistory')}</h3>
                 <p>{tx(l, 'noForecast')}</p>
               </div>
             ) : (
-              <Chart data={data} />
+              <Chart data={data} liveMoisture={liveMoisture} />
             )}
           </section>
 

@@ -40,6 +40,30 @@ export function solarVoltageToSunIntensity(voltage: number | null | undefined, m
   return Math.round(pct * 10) / 10;
 }
 
+/**
+ * Persist live ESP32 hardware telemetry to backend so history and charts track live sensor data.
+ */
+export async function syncESP32Telemetry(status: ESP32Status): Promise<void> {
+  if (status.soil_moisture_percent == null) return;
+  try {
+    await fetch('/api/esp32/telemetry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        soil_moisture_percent: status.soil_moisture_percent,
+        temperature_c: status.temperature_c,
+        humidity_percent: status.humidity_percent,
+        solar_panel_voltage_v: status.solar_panel_voltage_v,
+        rain_detected: status.rain_detected,
+        device: status.device,
+        uptime_ms: status.uptime_ms,
+      }),
+    });
+  } catch {
+    // Non-fatal background sync
+  }
+}
+
 export type ESP32ConnectionMode = 'proxy' | 'direct';
 export type ESP32MoistureLevel = 'dry' | 'moderate' | 'wet' | 'unavailable';
 
