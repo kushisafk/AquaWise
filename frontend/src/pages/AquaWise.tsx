@@ -643,27 +643,29 @@ export function DashboardPage() {
 
       {/* 0. ESP32 Smart Hardware Controller Section */}
       <section
-        className={`esp32-card ${esp32.isConnected ? 'live-glow' : esp32.isStale ? 'stale-glow' : ''}`}
+        className="sensor-section-card"
         data-testid="section-esp32-controller"
         aria-label="ESP32 Smart Hardware Controller"
       >
-        <div className="esp32-header-bar">
-          <div className="esp32-title-group">
-            <Cpu size={20} color="var(--color-primary, #1b4332)" />
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-heading, #0f172a)' }}>
-              {tx(l, 'esp32SectionTitle')}
-            </h2>
-            <span
-              className={`esp32-badge-pill ${esp32.isConnected ? 'live' : esp32.isStale ? 'stale' : 'offline'}`}
-              data-testid="esp32-status-pill"
-            >
-              <span className={`live-pulse-dot ${esp32.isConnected ? '' : 'offline'}`} />
-              {esp32.isConnected
-                ? tx(l, 'esp32StatusLive')
-                : esp32.isStale
-                  ? tx(l, 'esp32StatusStale')
-                  : tx(l, 'esp32StatusOffline')}
-            </span>
+        <div className="sensor-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h2 className="sensor-section-title">{tx(l, 'esp32SectionTitle')}</h2>
+              <span
+                className={`esp32-badge-pill ${esp32.isConnected ? 'live' : esp32.isStale ? 'stale' : 'offline'}`}
+                data-testid="esp32-status-pill"
+              >
+                <span className={`live-pulse-dot ${esp32.isConnected ? '' : 'offline'}`} />
+                {esp32.isConnected
+                  ? tx(l, 'esp32StatusLive')
+                  : esp32.isStale
+                    ? tx(l, 'esp32StatusStale')
+                    : tx(l, 'esp32StatusOffline')}
+              </span>
+            </div>
+            <p className="sensor-section-subtitle">
+              {tx(l, 'esp32SectionSub')}
+            </p>
           </div>
 
           <div className="esp32-meta-chips">
@@ -678,10 +680,6 @@ export function DashboardPage() {
                 <span>{tx(l, 'esp32Uptime')}: {formatUptime(esp32.data.uptime_ms)}</span>
               </span>
             )}
-            <span className="esp32-chip" title="Cooldown status">
-              <Shield size={12} />
-              <span>{esp32.data?.cooldown_ready ? tx(l, 'esp32CooldownReady') : tx(l, 'esp32CooldownActive')}</span>
-            </span>
             <Link href="/settings#esp32" className="text-button" style={{ fontSize: 12 }}>
               <SlidersHorizontal size={13} /> {tx(l, 'settings')}
             </Link>
@@ -710,6 +708,101 @@ export function DashboardPage() {
           </div>
         )}
 
+        {/* Real-Time Sensor Telemetry Grid */}
+        <div className="local-sensors-grid" data-testid="esp32-telemetry-grid" style={{ marginBottom: 16 }}>
+          {/* Soil Moisture */}
+          <div className="local-sensor-card" data-testid="esp32-soil-cell">
+            <div className="local-sensor-card-header">
+              <Droplets size={15} className="sensor-icon color-soil" />
+              <span className="local-sensor-card-label">{tx(l, 'soilMoistureLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {esp32.data?.soil_moisture_percent != null
+                ? `${esp32.data.soil_moisture_percent}%`
+                : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {esp32.data?.soil_moisture_percent != null
+                ? (() => {
+                    const cat = getMoistureCategory(esp32.data?.soil_moisture_percent);
+                    const tagLabel = cat === 'dry' ? tx(l, 'moistureDry') : cat === 'moderate' ? tx(l, 'moistureModerate') : cat === 'wet' ? tx(l, 'moistureWet') : tx(l, 'moistureUnavailable');
+                    return `${tagLabel} · ${tx(l, 'esp32SoilRaw')}: ${esp32.data?.soil_raw ?? '—'}`;
+                  })()
+                : tx(l, 'noMoisture')}
+            </div>
+          </div>
+
+          {/* Rain Sensor */}
+          <div className="local-sensor-card" data-testid="esp32-rain-cell">
+            <div className="local-sensor-card-header">
+              <CloudRain size={15} className="sensor-icon color-rain" />
+              <span className="local-sensor-card-label">{tx(l, 'sensorRainLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {esp32.data?.rain_detected === true ? (
+                <span className="status-text-highlight raining">{tx(l, 'sensorRaining')}</span>
+              ) : esp32.data?.rain_detected === false ? (
+                <span className="status-text-highlight dry">{tx(l, 'sensorNoRain')}</span>
+              ) : (
+                '—'
+              )}
+            </div>
+            <div className="local-sensor-card-caption">
+              {esp32.data?.rain_detected === true
+                ? (l === 'te' ? 'వర్షం నమోదవుతోంది' : l === 'hi' ? 'बारिश सक्रिय है' : 'Precipitation detected')
+                : esp32.data?.rain_detected === false
+                  ? (l === 'te' ? 'నేలపైన వర్షం లేదు' : l === 'hi' ? 'कोई वर्षा नहीं' : 'No rain on sensor plate')
+                  : (l === 'te' ? 'సమాచారం లేదు' : l === 'hi' ? 'कोई डेटा नहीं' : 'No sensor data')}
+            </div>
+          </div>
+
+          {/* Temperature Probe */}
+          <div className="local-sensor-card" data-testid="esp32-temp-cell">
+            <div className="local-sensor-card-header">
+              <Thermometer size={15} className="sensor-icon color-temp" />
+              <span className="local-sensor-card-label">{tx(l, 'temperatureLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {esp32.data?.temperature_c != null ? `${esp32.data.temperature_c}°C` : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {l === 'te' ? 'పొలంలో నేరుగా ఉష్ణోగ్రత' : l === 'hi' ? 'खेत का स्थानीय तापमान' : 'Field probe air temp'}
+            </div>
+          </div>
+
+          {/* Humidity Probe */}
+          <div className="local-sensor-card" data-testid="esp32-humidity-cell">
+            <div className="local-sensor-card-header">
+              <Gauge size={15} className="sensor-icon color-humidity" />
+              <span className="local-sensor-card-label">{tx(l, 'sensorHumidityLabel')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {esp32.data?.humidity_percent != null ? `${esp32.data.humidity_percent}%` : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {l === 'te' ? 'గాలిలోని తేమ శాతం' : l === 'hi' ? 'हवा में नमी का स्तर' : 'Relative humidity'}
+            </div>
+          </div>
+
+          {/* Sun Intensity / Solar Panel Voltage */}
+          <div className="local-sensor-card" data-testid="esp32-solar-cell">
+            <div className="local-sensor-card-header">
+              <Sun size={15} className="sensor-icon color-sun" />
+              <span className="local-sensor-card-label">{tx(l, 'sunIntensity')}</span>
+            </div>
+            <div className="local-sensor-card-value">
+              {esp32.data?.solar_panel_voltage_v != null
+                ? `${esp32.data.solar_panel_voltage_v.toFixed(2)} V`
+                : '—'}
+            </div>
+            <div className="local-sensor-card-caption">
+              {esp32.data?.solar_panel_voltage_v != null && esp32.data.solar_panel_voltage_v > 4.0
+                ? (l === 'te' ? 'సౌర శక్తి యాక్టివ్' : l === 'hi' ? 'सौर ऊर्जा सक्रिय' : 'Solar power active')
+                : (l === 'te' ? 'సౌర వోల్టేజ్' : l === 'hi' ? 'सौर वोल्टेज' : 'Solar panel voltage')}
+            </div>
+          </div>
+        </div>
+
         {/* Authoritative Recommendation & Reason from ESP32 */}
         {esp32.data && (
           <div
@@ -721,6 +814,7 @@ export function DashboardPage() {
                   : ''
             }`}
             data-testid="esp32-recommendation-banner"
+            style={{ marginBottom: 16 }}
           >
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -739,7 +833,7 @@ export function DashboardPage() {
         )}
 
         {/* Pump Controls & Mode Switcher Grid */}
-        <div className="esp32-control-panel">
+        <div className="esp32-control-panel" style={{ margin: 0 }}>
           {/* Box 1: Mode Switcher */}
           <div className="esp32-mode-box">
             <div className="esp32-box-header">
@@ -869,105 +963,11 @@ export function DashboardPage() {
 
         {/* Command Error Alert (if any) */}
         {esp32.commandError && (
-          <div className="alert-banner error" style={{ marginBottom: 16 }} role="alert">
+          <div className="alert-banner error" style={{ marginTop: 16 }} role="alert">
             <AlertTriangle size={16} />
             <span style={{ flex: 1 }}>{esp32.commandError}</span>
           </div>
         )}
-
-        {/* Real-Time ESP32 Sensor Telemetry Grid */}
-        <div className="esp32-telemetry-grid" data-testid="esp32-telemetry-grid">
-          {/* Soil Moisture */}
-          <div className="esp32-sensor-cell" data-testid="esp32-soil-cell">
-            <div className="esp32-sensor-cell-header">
-              <span>{tx(l, 'soilMoistureLabel')}</span>
-              <Droplets size={14} color="#0284c7" />
-            </div>
-            <div className="esp32-sensor-value">
-              {esp32.data?.soil_moisture_percent != null
-                ? `${esp32.data.soil_moisture_percent}%`
-                : '—'}
-            </div>
-            <div className="esp32-sensor-sub">
-              {(() => {
-                const cat = getMoistureCategory(esp32.data?.soil_moisture_percent);
-                const tagClass = cat === 'dry' ? 'dry' : cat === 'moderate' ? 'moderate' : cat === 'wet' ? 'wet' : 'unavailable';
-                const tagLabel = cat === 'dry' ? tx(l, 'moistureDry') : cat === 'moderate' ? tx(l, 'moistureModerate') : cat === 'wet' ? tx(l, 'moistureWet') : tx(l, 'moistureUnavailable');
-                return <span className={`esp32-tag ${tagClass}`}>{tagLabel}</span>;
-              })()}
-              <span>{tx(l, 'esp32SoilRaw')}: {esp32.data?.soil_raw ?? '—'}</span>
-            </div>
-          </div>
-
-          {/* Rain Sensor */}
-          <div className="esp32-sensor-cell" data-testid="esp32-rain-cell">
-            <div className="esp32-sensor-cell-header">
-              <span>{tx(l, 'sensorRainLabel')}</span>
-              <CloudRain size={14} color="#3b82f6" />
-            </div>
-            <div className="esp32-sensor-value">
-              {esp32.data?.rain_detected === true ? (
-                <span style={{ color: '#0284c7' }}>{tx(l, 'sensorRaining')}</span>
-              ) : esp32.data?.rain_detected === false ? (
-                <span>{tx(l, 'sensorNoRain')}</span>
-              ) : (
-                '—'
-              )}
-            </div>
-            <div className="esp32-sensor-sub">
-              <span className={`esp32-tag ${esp32.data?.rain_detected ? 'moderate' : 'wet'}`}>
-                {esp32.data?.rain_detected ? tx(l, 'sensorRaining') : tx(l, 'sensorNoRain')}
-              </span>
-              <span>{tx(l, 'esp32RainRaw')}: {esp32.data?.rain_raw ?? '—'}</span>
-            </div>
-          </div>
-
-          {/* Temperature Probe */}
-          <div className="esp32-sensor-cell" data-testid="esp32-temp-cell">
-            <div className="esp32-sensor-cell-header">
-              <span>{tx(l, 'temperatureLabel')}</span>
-              <Thermometer size={14} color="#f97316" />
-            </div>
-            <div className="esp32-sensor-value">
-              {esp32.data?.temperature_c != null ? `${esp32.data.temperature_c}°C` : '—'}
-            </div>
-            <div className="esp32-sensor-sub">
-              <span>ESP32 Probe</span>
-            </div>
-          </div>
-
-          {/* Humidity Probe */}
-          <div className="esp32-sensor-cell" data-testid="esp32-humidity-cell">
-            <div className="esp32-sensor-cell-header">
-              <span>{tx(l, 'sensorHumidityLabel')}</span>
-              <Gauge size={14} color="#10b981" />
-            </div>
-            <div className="esp32-sensor-value">
-              {esp32.data?.humidity_percent != null ? `${esp32.data.humidity_percent}%` : '—'}
-            </div>
-            <div className="esp32-sensor-sub">
-              <span>Relative Humidity</span>
-            </div>
-          </div>
-
-          {/* Solar Panel Voltage */}
-          <div className="esp32-sensor-cell" data-testid="esp32-solar-cell">
-            <div className="esp32-sensor-cell-header">
-              <span>{tx(l, 'esp32SolarVoltage')}</span>
-              <Zap size={14} color="#eab308" />
-            </div>
-            <div className="esp32-sensor-value">
-              {esp32.data?.solar_panel_voltage_v != null
-                ? `${esp32.data.solar_panel_voltage_v.toFixed(2)} V`
-                : '—'}
-            </div>
-            <div className="esp32-sensor-sub">
-              <span className={`esp32-tag ${esp32.data?.solar_panel_voltage_v != null && esp32.data.solar_panel_voltage_v > 4.0 ? 'wet' : 'moderate'}`}>
-                {esp32.data?.solar_panel_voltage_v != null ? 'Solar Active' : 'No Solar Data'}
-              </span>
-            </div>
-          </div>
-        </div>
       </section>
 
 
