@@ -743,13 +743,17 @@ def _effective_moisture(
         return None, "stale", True
 
     if scenario and scenario.get("soilMoisture") is not None:
-
         moisture = float(scenario["soilMoisture"])
-
         return moisture, "simulated", fault
 
-    if not fault:
+    # Check for live hardware sensor reading from ESP32
+    hardware = get_value(db, "hardware_snapshot")
+    if hardware and hardware.get("soil_moisture") is not None and not fault:
+        updated_at = parse_time(hardware.get("updated_at"))
+        if updated_at and (now_utc() - updated_at).total_seconds() < 1800:
+            return float(hardware["soil_moisture"]), "hardware", False
 
+    if not fault:
         return float(simulation["moisture"]), "simulated", False
 
     last = db.execute(
@@ -1249,10 +1253,23 @@ def get_analytics():
         } for row in reversed(telemetry)]
 
         moisture = field["telemetry"]["soilMoisture"]
-        
-        # 3. Anomaly Detection (adapting when reading fails)
+        hardware = get_value(db, "hardware_snapshot")
+        if moisture is None and hardware and hardware.get("soil_moisture") is not None:
+            moisture = float(hardware["soil_moisture"])
+
+        # If live hardware reading exists, ensure history ends with current live sensor reading
+        if hardware and hardware.get("soil_moisture") is not None:
+            hw_val = float(hardware["soil_moisture"])
+            if not history:
+                history = [{"at": hardware.get("updated_at") or iso(), "moisturePercent": hw_val}]
+            elif history[-1]["moisturePercent"] != hw_val:
+                history.append({"at": hardware.get("updated_at") or iso(), "moisturePercent": hw_val})
+                if len(history) > 48:
+                    history = history[-48:]
+
+        # 3. Anomaly Detection (only for simulated data; hardware readings are ground truth)
         is_anomalous = False
-        if moisture is not None and len(history) >= 10:
+        if moisture is not None and field["telemetry"].get("provenance") != "hardware" and len(history) >= 10:
             try:
                 from sklearn.ensemble import IsolationForest
                 import numpy as np
@@ -1955,4 +1972,248 @@ def test_push_endpoint():
             }
             send_web_push(db, record)
         return {"status": "sent", "notification": record}
+
+
+# ==========================================
+# ESP32 Hardware HTTP Proxy & Management
+# ==========================================
+
+import httpx
+
+DEFAULT_ESP32_URL = os.environ.get("ESP32_URL", "http://192.168.4.1")
+
+
+class ESP32ConfigInput(BaseModel):
+    esp32_url: str = Field(default="http://192.168.4.1", max_length=255)
+
+
+def _get_esp32_url(db: sqlite3.Connection) -> str:
+    url = get_value(db, "setting:esp32_url", DEFAULT_ESP32_URL)
+    if isinstance(url, str) and url.strip():
+        clean = url.strip().rstrip("/")
+        if not (clean.startswith("http://") or clean.startswith("https://")):
+            clean = f"http://{clean}"
+        return clean
+    return DEFAULT_ESP32_URL.rstrip("/")
+
+
+@app.get(f"{API_PREFIX}/esp32/config")
+def get_esp32_config():
+    with connect_db() as db:
+        return {"esp32_url": _get_esp32_url(db)}
+
+
+@app.post(f"{API_PREFIX}/esp32/config")
+def update_esp32_config(payload: ESP32ConfigInput):
+    clean_url = payload.esp32_url.strip().rstrip("/")
+    if not (clean_url.startswith("http://") or clean_url.startswith("https://")):
+        clean_url = f"http://{clean_url}"
+    with DB_LOCK, connect_db() as db:
+        set_value(db, "setting:esp32_url", clean_url)
+        return {"esp32_url": clean_url}
+
+
+def record_hardware_telemetry(db: sqlite3.Connection, data: dict) -> dict:
+    soil_moisture = data.get("soil_moisture_percent")
+    if soil_moisture is None:
+        soil_moisture = data.get("soilMoisture") or data.get("soil_moisture")
+    
+    if soil_moisture is not None:
+        try:
+            soil_moisture = float(soil_moisture)
+        except (ValueError, TypeError):
+            soil_moisture = None
+
+    temp = data.get("temperature_c") or data.get("temperatureC") or data.get("temperature")
+    if temp is not None:
+        try:
+            temp = float(temp)
+        except (ValueError, TypeError):
+            temp = None
+
+    hum = data.get("humidity_percent") or data.get("humidityPercent") or data.get("humidity")
+    if hum is not None:
+        try:
+            hum = float(hum)
+        except (ValueError, TypeError):
+            hum = None
+
+    solar_v = data.get("solar_panel_voltage_v") or data.get("solarVoltage")
+    sunlight = data.get("sunlight_percent") or data.get("sunlightPercent") or data.get("sun_intensity")
+    if sunlight is None and solar_v is not None:
+        try:
+            sunlight = min(100.0, max(0.0, (float(solar_v) / 5.5) * 100))
+        except (ValueError, TypeError):
+            sunlight = 50.0
+    elif sunlight is not None:
+        try:
+            sunlight = float(sunlight)
+        except (ValueError, TypeError):
+            sunlight = 50.0
+    else:
+        sunlight = 50.0
+
+    raining = 1 if data.get("rain_detected") or data.get("raining_now") else 0
+    now_str = iso()
+
+    hardware_snapshot = {
+        "soil_moisture": soil_moisture,
+        "temperature_c": temp,
+        "humidity_percent": hum,
+        "sunlight_percent": sunlight,
+        "raining_now": bool(raining),
+        "updated_at": now_str,
+    }
+    set_value(db, "hardware_snapshot", hardware_snapshot)
+
+    if soil_moisture is not None:
+        # Keep simulation in sync with live sensor
+        sim = get_value(db, "simulation", DEFAULT_SIMULATION.copy())
+        sim["moisture"] = round(soil_moisture, 1)
+        sim["lastUpdated"] = now_str
+        set_value(db, "simulation", sim)
+
+        # Remove obsolete simulated 0.0 entries so graph doesn't show a false zero line
+        db.execute(
+            "DELETE FROM telemetry WHERE provenance = 'simulated' AND soil_moisture = 0.0"
+        )
+
+        last_tel = db.execute(
+            "SELECT soil_moisture, created_at FROM telemetry WHERE provenance = 'hardware' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+        should_insert = True
+        if last_tel:
+            last_time = parse_time(last_tel["created_at"])
+            last_val = float(last_tel["soil_moisture"]) if last_tel["soil_moisture"] is not None else None
+            time_diff = (now_utc() - last_time).total_seconds() if last_time else 9999
+            if time_diff < 15 and (last_val is not None and abs(last_val - soil_moisture) < 0.2):
+                should_insert = False
+
+        if should_insert:
+            db.execute(
+                "INSERT INTO telemetry(soil_moisture, temperature_c, humidity_percent, "
+                "sunlight_percent, raining_now, sensor_fault, provenance, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 0, 'hardware', ?)",
+                (soil_moisture, temp, hum, round(sunlight, 1), raining, now_str),
+            )
+            db.commit()
+
+    return hardware_snapshot
+
+
+@app.post(f"{API_PREFIX}/esp32/telemetry")
+@app.post(f"{API_PREFIX}/telemetry")
+def submit_esp32_telemetry(payload: dict):
+    with DB_LOCK, connect_db() as db:
+        snapshot = record_hardware_telemetry(db, payload)
+        return {"status": "ok", "snapshot": snapshot}
+
+
+@app.get(f"{API_PREFIX}/esp32/status")
+async def esp32_proxy_status(url: str | None = None):
+    with connect_db() as db:
+        base_url = url.strip().rstrip("/") if url else _get_esp32_url(db)
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        base_url = f"http://{base_url}"
+    target = f"{base_url}/api/status"
+    try:
+        async with httpx.AsyncClient(timeout=2.5) as client:
+            resp = await client.get(target)
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=resp.status_code, detail=resp.text or f"ESP32 returned HTTP {resp.status_code}")
+            data = resp.json()
+            if isinstance(data, dict):
+                with DB_LOCK, connect_db() as db:
+                    record_hardware_telemetry(db, data)
+            return data
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to connect to ESP32 at {base_url}: {str(exc)}"
+        )
+
+
+@app.post(f"{API_PREFIX}/esp32/pump/start")
+async def esp32_proxy_pump_start(url: str | None = None):
+    with connect_db() as db:
+        base_url = url.strip().rstrip("/") if url else _get_esp32_url(db)
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        base_url = f"http://{base_url}"
+    target = f"{base_url}/api/pump/start"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(target)
+            if resp.status_code >= 400:
+                try:
+                    data = resp.json()
+                    detail_msg = data.get("detail") or data.get("error") or resp.text
+                except Exception:
+                    detail_msg = resp.text or f"ESP32 error {resp.status_code}"
+                raise HTTPException(status_code=resp.status_code, detail=detail_msg)
+            try:
+                return resp.json()
+            except Exception:
+                return {"status": "ok", "message": "Pump start pulse triggered"}
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to communicate with ESP32 at {base_url}: {str(exc)}"
+        )
+
+
+@app.post(f"{API_PREFIX}/esp32/pump/stop")
+async def esp32_proxy_pump_stop(url: str | None = None):
+    with connect_db() as db:
+        base_url = url.strip().rstrip("/") if url else _get_esp32_url(db)
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        base_url = f"http://{base_url}"
+    target = f"{base_url}/api/pump/stop"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(target)
+            if resp.status_code >= 400:
+                try:
+                    data = resp.json()
+                    detail_msg = data.get("detail") or data.get("error") or resp.text
+                except Exception:
+                    detail_msg = resp.text or f"ESP32 error {resp.status_code}"
+                raise HTTPException(status_code=resp.status_code, detail=detail_msg)
+            try:
+                return resp.json()
+            except Exception:
+                return {"status": "ok", "message": "Pump stopped"}
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to communicate with ESP32 at {base_url}: {str(exc)}"
+        )
+
+
+@app.post(f"{API_PREFIX}/esp32/auto/toggle")
+async def esp32_proxy_auto_toggle(url: str | None = None):
+    with connect_db() as db:
+        base_url = url.strip().rstrip("/") if url else _get_esp32_url(db)
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        base_url = f"http://{base_url}"
+    target = f"{base_url}/api/auto/toggle"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(target)
+            if resp.status_code >= 400:
+                try:
+                    data = resp.json()
+                    detail_msg = data.get("detail") or data.get("error") or resp.text
+                except Exception:
+                    detail_msg = resp.text or f"ESP32 error {resp.status_code}"
+                raise HTTPException(status_code=resp.status_code, detail=detail_msg)
+            try:
+                return resp.json()
+            except Exception:
+                return {"status": "ok", "message": "Automatic mode toggled"}
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to communicate with ESP32 at {base_url}: {str(exc)}"
+        )
 
