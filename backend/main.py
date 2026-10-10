@@ -22,6 +22,14 @@ from pathlib import Path
 
 from typing import Any, Literal
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
 from fastapi import FastAPI, HTTPException, Query, Request
 
 from pydantic import BaseModel, Field
