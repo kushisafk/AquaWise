@@ -59,12 +59,19 @@ def generate_vapid_keypair() -> tuple[str, str]:
     return pub_b64, priv_pem
 
 
+_DEV_VAPID_CACHE: tuple[Any, str, str] | None = None
+
+
 def load_vapid() -> tuple[Any | None, str | None, str]:
     """Load VAPID instance, public key string, and subject claim from environment variables.
+    
+    If no keys are provided in environment variables, automatically generates and caches
+    an ephemeral in-memory P-256 keypair for development convenience.
     
     Returns:
         (vapid_instance, public_key_b64url, subject_claim) or (None, None, subject_claim) if unconfigured.
     """
+    global _DEV_VAPID_CACHE
     if Vapid is None:
         return None, None, DEFAULT_CLAIMS_SUB
 
@@ -73,7 +80,21 @@ def load_vapid() -> tuple[Any | None, str | None, str]:
     sub_claim = os.environ.get("VAPID_CLAIMS_SUB", DEFAULT_CLAIMS_SUB).strip()
 
     if not priv_key_raw:
-        return None, None, sub_claim
+        if _DEV_VAPID_CACHE is None:
+            try:
+                v = Vapid()
+                v.generate_keys()
+                raw_pub = v.public_key.public_bytes(
+                    serialization.Encoding.X962,
+                    serialization.PublicFormat.UncompressedPoint,
+                )
+                pub_b64 = base64.urlsafe_b64encode(raw_pub).decode("utf-8").rstrip("=")
+                _DEV_VAPID_CACHE = (v, pub_b64, sub_claim)
+                logger.info("Generated ephemeral in-memory VAPID keypair for local development.")
+            except Exception as exc:
+                logger.warning("Failed to generate fallback in-memory VAPID key: %s", exc)
+                return None, None, sub_claim
+        return _DEV_VAPID_CACHE
 
     try:
         # 1. Check if private key is PEM format
