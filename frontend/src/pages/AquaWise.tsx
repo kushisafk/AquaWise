@@ -664,7 +664,7 @@ export function AnalyticsPage() {
                 ) : null}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 12 }}>
+              <div className="chips-stat-grid">
                 <div className="summary-chip" style={{ padding: '8px 12px' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tx(l, 'target')}</div>
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{(data as any).schedule.targetMoisture}%</div>
@@ -702,7 +702,7 @@ export function AnalyticsPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginTop: 12 }}>
+              <div className="chips-stat-grid">
                 <div className="summary-chip" style={{ padding: '8px 12px' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tx(l, 'saving')}</div>
                   <div style={{ fontSize: 16, fontWeight: 700 }} className={bestStrategy.waterSavedPercent > 0 ? 'badge-savings-positive' : bestStrategy.waterSavedPercent < 0 ? 'badge-savings-negative' : 'badge-savings-neutral'}>
@@ -1607,7 +1607,7 @@ export function SettingsPage() {
                   <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 8 }}>
                     {tx(l, 'useTest')} (10 Scenarios)
                   </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 14 }}>
+                  <div className="scenario-preset-grid">
                     <button
                       type="button"
                       className="btn btn-outline btn-small"
