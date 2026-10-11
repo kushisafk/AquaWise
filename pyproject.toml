@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "aquawise-backend"
 version = "1.0.0"
@@ -11,3 +15,6 @@ dependencies = [
     "pywebpush>=2.5.0",
     "uvicorn>=0.54.0",
 ]
+
+[tool.setuptools]
+packages = ["backend"]
