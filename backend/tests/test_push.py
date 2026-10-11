@@ -37,6 +37,7 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clean_push_and_notifications():
+    main._init_db()
     with DB_LOCK, connect_db() as db:
         init_push_db(db)
         db.execute("DELETE FROM push_subscriptions")
