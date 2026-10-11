@@ -1,0 +1,19 @@
+# ============================================================
+# AquaWise Backend & Decision Engine Dependencies
+# ============================================================
+
+# Web framework & ASGI server
+fastapi>=0.143.0
+uvicorn[standard]>=0.54.0
+httpx>=0.28.1
+python-dotenv>=1.0.0
+
+# Web Push notifications (RFC 8292 VAPID)
+pywebpush>=2.5.0
+
+# Machine learning & numerical modeling
+scikit-learn>=1.4.0
+numpy>=1.26.0
+
+# Automated testing suite
+pytest>=9.0.0
