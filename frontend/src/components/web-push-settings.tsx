@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAquaWise, tr } from '@/App';
 import { useGetVapidPublicKey, getGetNotificationsQueryKey } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Bell, CheckCircle2, AlertCircle, Send, ShieldAlert, LoaderCircle } from 'lucide-react';
+import { Bell, CheckCircle2, AlertCircle, Send, ShieldAlert, LoaderCircle, RefreshCw, Info } from 'lucide-react';
 
 const DEVICE_TOKEN_KEY = 'aquawise_device_token';
 
@@ -16,14 +16,29 @@ function getOrCreateDeviceToken(): string {
 }
 
 export function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  // Strip whitespace, surrounding quotes, and existing padding
+  const cleaned = base64String.trim().replace(/['"]/g, '').replace(/=/g, '');
+  const padding = '='.repeat((4 - (cleaned.length % 4)) % 4);
+  const base64 = (cleaned + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+async function getReadyRegistration(): Promise<ServiceWorkerRegistration> {
+  if (!('serviceWorker' in navigator)) {
+    throw new Error('Service Worker is not supported in this browser.');
+  }
+
+  let reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) {
+    reg = await navigator.serviceWorker.register('/service-worker.js');
+  }
+
+  return navigator.serviceWorker.ready;
 }
 
 export function WebPushSettings() {
@@ -54,7 +69,7 @@ export function WebPushSettings() {
 
     setPermission(Notification.permission);
 
-    navigator.serviceWorker.ready
+    getReadyRegistration()
       .then((reg) => reg.pushManager.getSubscription())
       .then((sub) => {
         setIsSubscribed(Boolean(sub));
@@ -76,7 +91,7 @@ export function WebPushSettings() {
     try {
       if (isSubscribed) {
         // Unsubscribe
-        const reg = await navigator.serviceWorker.ready;
+        const reg = await getReadyRegistration();
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
           const endpoint = sub.endpoint;
@@ -113,13 +128,61 @@ export function WebPushSettings() {
           return;
         }
 
-        // Subscribe through PushManager
-        const reg = await navigator.serviceWorker.ready;
+        const reg = await getReadyRegistration();
+
+        // Proactively unsubscribe any existing/stale subscription first.
+        // A mismatch between existing subscription key and new VAPID key causes browsers
+        // to reject with "Registration failed - push service error".
+        try {
+          const existingSub = await reg.pushManager.getSubscription();
+          if (existingSub) {
+            await existingSub.unsubscribe();
+          }
+        } catch (cleanupErr) {
+          console.warn('Could not clean up existing push subscription:', cleanupErr);
+        }
+
         const appServerKey = urlBase64ToUint8Array(vapid.data.publicKey);
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: appServerKey as unknown as BufferSource,
-        });
+
+        let sub: PushSubscription;
+        try {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: appServerKey as unknown as BufferSource,
+          });
+        } catch (initialErr) {
+          const errMsg = initialErr instanceof Error ? initialErr.message : String(initialErr);
+          const isPushServiceErr =
+            errMsg.toLowerCase().includes('push service error') ||
+            (initialErr instanceof DOMException && initialErr.name === 'AbortError');
+
+          if (isPushServiceErr) {
+            console.warn('Initial pushManager.subscribe failed. Resetting service worker registration and retrying...', initialErr);
+            try {
+              const old = await reg.pushManager.getSubscription();
+              if (old) await old.unsubscribe();
+              await reg.unregister();
+              const freshReg = await navigator.serviceWorker.register('/service-worker.js');
+              const activeReg = await navigator.serviceWorker.ready;
+              sub = await activeReg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: appServerKey as unknown as BufferSource,
+              });
+            } catch (retryErr) {
+              const isBrave = Boolean((navigator as any).brave && typeof (navigator as any).brave.isBrave === 'function');
+              if (isBrave) {
+                throw new Error(
+                  'Push service blocked by Brave. Enable "Use Google services for push messaging" in brave://settings/privacy and restart browser.'
+                );
+              }
+              throw new Error(
+                'Registration failed – push service error. The browser push service is unavailable or blocked by network/firewall settings.'
+              );
+            }
+          } else {
+            throw initialErr;
+          }
+        }
 
         const subJson = sub.toJSON();
         const p256dh = subJson.keys?.p256dh;
@@ -177,6 +240,8 @@ export function WebPushSettings() {
     }
   };
 
+  const isPushServiceError = errorMsg.toLowerCase().includes('push service');
+
   return (
     <div className="web-push-settings-card" style={{ marginTop: 16, padding: '16px 18px', background: '#f8fafc', borderRadius: 8, border: '1px solid var(--border-soft)' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
@@ -221,9 +286,47 @@ export function WebPushSettings() {
           </div>
 
           {errorMsg && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#dc2626', marginTop: 8 }}>
-              <AlertCircle size={14} />
-              <span>{errorMsg}</span>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#dc2626' }}>
+                <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                <span>{errorMsg}</span>
+              </div>
+
+              {isPushServiceError && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: '10px 12px',
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    color: '#991b1b',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#b91c1c' }}>
+                    <Info size={13} />
+                    <span>{tr(lang, 'pushServiceErrorTitle')}</span>
+                  </div>
+                  <ul style={{ margin: '6px 0 6px 0', paddingLeft: 18 }}>
+                    <li style={{ marginTop: 2 }}>{tr(lang, 'pushServiceErrorBrave')}</li>
+                    <li style={{ marginTop: 2 }}>{tr(lang, 'pushServiceErrorNetwork')}</li>
+                  </ul>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={loading}
+                      onClick={handleTogglePush}
+                      style={{ fontSize: 11, padding: '4px 9px', minHeight: 26, gap: 5, background: '#fff' }}
+                    >
+                      <RefreshCw size={11} className={loading ? 'spin' : ''} />
+                      <span>{tr(lang, 'pushRetry')}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

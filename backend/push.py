@@ -68,12 +68,24 @@ def load_vapid() -> tuple[Any | None, str | None, str]:
     if Vapid is None:
         return None, None, DEFAULT_CLAIMS_SUB
 
-    pub_key_raw = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+    pub_key_raw = os.environ.get("VAPID_PUBLIC_KEY", "").strip().strip('"').strip("'")
     priv_key_raw = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
     sub_claim = os.environ.get("VAPID_CLAIMS_SUB", DEFAULT_CLAIMS_SUB).strip()
 
     if not priv_key_raw:
         return None, None, sub_claim
+
+    # Strip surrounding triple or single quotes from private key string
+    if priv_key_raw.startswith(('"""', "'''")):
+        priv_key_raw = priv_key_raw[3:-3].strip()
+    elif (priv_key_raw.startswith('"') and priv_key_raw.endswith('"')) or (
+        priv_key_raw.startswith("'") and priv_key_raw.endswith("'")
+    ):
+        priv_key_raw = priv_key_raw[1:-1].strip()
+
+    # Convert literal escaped newlines if present from .env format
+    if "\\n" in priv_key_raw:
+        priv_key_raw = priv_key_raw.replace("\\n", "\n")
 
     try:
         # 1. Check if private key is PEM format
@@ -89,15 +101,18 @@ def load_vapid() -> tuple[Any | None, str | None, str]:
             except Exception:
                 vapid = Vapid.from_raw(priv_key_raw.encode("utf-8"))
 
-        # Derive or verify public key
-        if pub_key_raw:
-            pub_key_b64 = pub_key_raw
-        else:
-            raw_pub = vapid.public_key.public_bytes(
-                serialization.Encoding.X962,
-                serialization.PublicFormat.UncompressedPoint,
+        # Derive canonical uncompressed public key directly from private key
+        raw_pub = vapid.public_key.public_bytes(
+            serialization.Encoding.X962,
+            serialization.PublicFormat.UncompressedPoint,
+        )
+        derived_pub_b64 = base64.urlsafe_b64encode(raw_pub).decode("utf-8").rstrip("=")
+
+        if pub_key_raw and pub_key_raw != derived_pub_b64:
+            logger.warning(
+                "VAPID_PUBLIC_KEY in environment does not match key derived from VAPID_PRIVATE_KEY. Using derived key to prevent push signature failures."
             )
-            pub_key_b64 = base64.urlsafe_b64encode(raw_pub).decode("utf-8").rstrip("=")
+        pub_key_b64 = derived_pub_b64
 
         return vapid, pub_key_b64, sub_claim
     except Exception as exc:
